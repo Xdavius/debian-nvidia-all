@@ -18,6 +18,7 @@
 #   pkgver=390.157 nvidia_open=false pacstall -IB ./nvidia-driver-run.pacscript
 
 pkgver="${pkgver:-580.159.03}"
+patch_relaxed="${patch_relaxed:-${PATCH_RELAXED:-false}}"
 
 # Mode module noyau. true utilise kernel-open quand le .run NVIDIA le fournit;
 # false utilise l'arbre kernel proprietaire classique.
@@ -101,6 +102,7 @@ source=(
   "kernel-7.0-580.patch"
   "kernel-7.0.patch"
   "kernel-7.1.patch"
+  "kernel-7.0-470-all-compat.patch"
   "legacy-kernel-6.4.diff"
   "legacy-kernel-6.5.diff"
   "legacy-kernel-6.6.diff"
@@ -125,9 +127,60 @@ _ver_major() {
   echo "${pkgver%%.*}"
 }
 
+_kernel_release() {
+  uname -r 2>/dev/null || echo "0.0.0"
+}
+
+_kernel_triplet() {
+  local rel=${1:-$(_kernel_release)}
+  rel=${rel%%-*}
+  local a b c
+  IFS='.' read -r a b c <<< "$rel"
+  echo "${a:-0}.${b:-0}.${c:-0}"
+}
+
+_kernel_ge() {
+  local lhs rhs
+  lhs=$(_kernel_triplet "$1")
+  rhs=$(_kernel_triplet "$2")
+  [[ "$(printf '%s\n%s\n' "$rhs" "$lhs" | sort -V | tail -n1)" == "$lhs" ]]
+}
+
+_extract_patch_kernel_tag() {
+  local p=$1
+  if [[ $p =~ ^kernel-([0-9]+\.[0-9]+) ]]; then
+    echo "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  if [[ $p =~ ^legacy-kernel-([0-9]+\.[0-9]+) ]]; then
+    echo "${BASH_REMATCH[1]}"
+    return 0
+  fi
+  return 1
+}
+
 _patch_plan() {
   local p=$1 major
+  local running_kernel patch_kernel
   major=$(_ver_major)
+  running_kernel=$(_kernel_triplet)
+
+  # Patches critiques 470: ne jamais les filtrer avec la logique "strict"
+  # basée sur uname -r, car DKMS peut compiler pour un autre noyau/headers.
+  case "$p" in
+    kernel-7.0-470-all-compat.patch|kernel-6.19-470.patch|kernel-7.0-470.patch)
+      ;;
+    *)
+      # Mode strict par défaut: ne tente pas les patchs qui ciblent un noyau plus
+      # récent que le noyau courant. En mode relax, on retente large.
+      if [[ $patch_relaxed != "true" ]] && patch_kernel=$(_extract_patch_kernel_tag "$p"); then
+        if ! _kernel_ge "$running_kernel" "${patch_kernel}.0"; then
+          echo "skip|||patch cible kernel ${patch_kernel}+ (kernel courant: ${running_kernel}, mode strict)"
+          return
+        fi
+      fi
+      ;;
+  esac
 
   # Sortie: status|base_dir|patch_level|reason
   # status: apply pour tenter le patch, skip pour le noter sans tenter.
@@ -137,16 +190,28 @@ _patch_plan() {
         echo "skip|||patch reserve a la serie 390"
       return ;;
 
+    kernel-7.0-470-all-compat.patch)
+      [[ $major == 470 && ( $nvidia_open == "false" || ${has_real_kernel_open:-false} != "true" ) ]] && \
+        echo "apply|auto|1|compatibilite 470 kernels recents (patch consolide)" || \
+        echo "skip|||patch reserve 470 proprietaire"
+      return ;;
+
+    kernel-6.19-470.patch|kernel-7.0-470.patch)
+      [[ $major == 470 && ( $nvidia_open == "false" || ${has_real_kernel_open:-false} != "true" ) ]] && \
+        echo "apply|kernel-dkms|1|compatibilite 470 kernels 6.19/7.0" || \
+        echo "skip|||patch reserve 470 proprietaire"
+      return ;;
+
     0001-Enable-atomic-kernel-modesetting-by-default.diff|fix-hw-cursor-kde.diff)
       [[ ${has_real_kernel_open:-false} == "true" && $nvidia_open == "true" ]] && \
-        echo "apply|kernel-open|1|patch kernel-open" || \
+        echo "apply|auto|1|patch kernel-open" || \
         echo "skip|||patch kernel-open non applicable au mode courant"
       return ;;
 
     0002-Add-IBT-support.diff|Add-IBT-support.diff|nvidia-open-gcc-ibt-sls.diff|\
     silence-event-assert-until-570.diff|fix-hdmi-names.diff|kernel-7.0-580.patch)
       [[ ${has_real_kernel_open:-false} == "true" && $nvidia_open == "true" ]] && \
-        echo "apply|kernel-open|1|patch sources kernel-open" || \
+        echo "apply|auto|1|patch sources kernel-open" || \
         echo "skip|||patch kernel-open non applicable au mode courant"
       return ;;
 
@@ -156,7 +221,7 @@ _patch_plan() {
     list_is_first.diff|GFP_RETRY_MAYFAIL-test.diff|455-crashfix.diff|\
     nvidia-bsb-dsc-fix.diff|01-ipmi-vm.diff|02-ipmi-vm.diff)
       [[ $nvidia_open == "false" || ${has_real_kernel_open:-false} != "true" ]] && \
-        echo "apply|.|1|patch arbre proprietaire/legacy" || \
+        echo "apply|auto|1|patch arbre proprietaire/legacy" || \
         echo "skip|||patch proprietaire ignore en mode kernel-open"
       return ;;
 
@@ -166,6 +231,20 @@ _patch_plan() {
   esac
 
   echo "apply|.|1|patch non classe, tentative prudente"
+}
+
+_patch_base_dir_auto() {
+  local patch_file=$1
+  local first_path
+  first_path=$(sed -nE 's#^(\\+\\+\\+|---) [ab]/([^[:space:]]+).*#\\2#p' "$patch_file" \
+    | grep -v '^/dev/null$' | head -n1)
+  [[ -z $first_path ]] && { echo "."; return; }
+  case "$first_path" in
+    kernel-dkms/*|kernel-open/*|kernel/*) echo "." ;;
+    common/*|nvidia/*|nvidia-drm/*|nvidia-modeset/*|nvidia-uvm/*|conftest.sh|Kbuild|Makefile)
+      echo "kernel-dkms" ;;
+    *) echo "." ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -261,6 +340,9 @@ _dest_dir() {
 # ---------------------------------------------------------------------------
 
 prepare() {
+  local major
+  major=$(_ver_major)
+  echo "Mode patch: $([[ $patch_relaxed == "true" ]] && echo "relax" || echo "strict") (kernel courant: $(_kernel_triplet))"
   local runfile
   runfile=$(find "${srcdir}" -maxdepth 1 -type f -name 'NVIDIA-Linux-*.run' | head -n1)
   [[ -n $runfile ]] || { echo "ERROR: no NVIDIA-Linux-*.run in ${srcdir}"; return 1; }
@@ -319,6 +401,9 @@ prepare() {
       echo "SKIP: $reason" >> "${srcdir}/debug.txt"
       continue
     fi
+    if [[ $base_dir == auto ]]; then
+      base_dir=$(_patch_base_dir_auto "$p")
+    fi
     if [[ ! -d $base_dir ]]; then
       failed_patches+=("$p_name")
       echo "  [!!] $p_name (Dossier cible absent: $base_dir)"
@@ -339,11 +424,43 @@ prepare() {
         echo "  [!!] $p_name (Erreur imprévue)"
       fi
     else
-      failed_patches+=("$p_name")
-      echo "  [..] $p_name (Incompatible)"
+      # Si le patch est déjà présent (arbre réutilisé), on le considère comme OK.
+      if patch -p"$patch_level" -R -F 3 --dry-run < "$p" >> "${srcdir}/debug.txt" 2>&1; then
+        applied_patches+=("$p_name")
+        echo "  [OK] $p_name (deja applique: ${base_dir})"
+      else
+        failed_patches+=("$p_name")
+        echo "  [..] $p_name (Incompatible)"
+      fi
     fi
     cd "$oldpwd" || return 1
   done
+
+  # Garde-fou: sur la branche 470 et noyaux tres recents, ces patchs sont
+  # indispensables. Sans eux, la compilation explose plus loin avec des
+  # erreurs en cascade (nv-mm.h, conftest ACPI, etc.).
+  if [[ $major == 470 ]]; then
+    local -a required_470_patches=(
+      "kernel-7.0-470-all-compat.patch"
+      "kernel-6.19-470.patch"
+      "kernel-7.0-470.patch"
+    )
+    local rp found
+    for rp in "${required_470_patches[@]}"; do
+      found=false
+      for p_name in "${applied_patches[@]}"; do
+        if [[ $p_name == "$rp" ]]; then
+          found=true
+          break
+        fi
+      done
+      if [[ $found == false ]]; then
+        echo "ERREUR: patch critique 470 non applique: ${rp}"
+        echo "Verifier la section '-- Patches --' et le debug: ${srcdir}/debug.txt"
+        return 1
+      fi
+    done
+  fi
   
   # On retire les liens de compatibilité
   [[ $created_compat_link == true && -L $compat_link ]] && rm -f "$compat_link"
