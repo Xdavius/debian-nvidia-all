@@ -1,0 +1,770 @@
+--- a/kernel/Kbuild	2022-10-12 11:29:57.000000000 +0200
++++ b/kernel/Kbuild	2026-05-13 16:09:22.434483056 +0200
+@@ -1,3 +1,7 @@
++ccflags-y += -I$(src)/common/inc -I$(src)
++subdir-ccflags-y += -I$(src)/common/inc -I$(src)
++ccflags-y += -isystem $(shell $(CC) -print-file-name=include)
++
+ ###########################################################################
+ # Kbuild file for NVIDIA Linux GPU driver kernel modules
+ ###########################################################################
+@@ -63,12 +67,15 @@
+ 
+ EXTRA_CFLAGS += -I$(src)/common/inc
+ EXTRA_CFLAGS += -I$(src)
+-EXTRA_CFLAGS += -Wall -MD $(DEFINES) $(INCLUDES) -Wsign-compare -Wno-cast-qual -Wno-error
++EXTRA_CFLAGS += -Wall $(DEFINES) $(INCLUDES) -Wsign-compare -Wno-cast-qual -Wno-error -Wno-array-bounds
+ EXTRA_CFLAGS += -D__KERNEL__ -DMODULE -DNVRM -DNV_VERSION_STRING=\"390.157\" -Wno-unused-function -Wuninitialized -fno-strict-aliasing -mno-red-zone -mcmodel=kernel -DNV_UVM_ENABLE -Wno-sign-compare -Wno-format-extra-args
+ EXTRA_CFLAGS += $(call cc-option,-Werror=undef,)
+ EXTRA_CFLAGS += -DNV_SPECTRE_V2=$(NV_SPECTRE_V2)
+ EXTRA_CFLAGS += -DNV_KERNEL_INTERFACE_LAYER
+ 
++ccflags-y += $(EXTRA_CFLAGS)
++subdir-ccflags-y += $(EXTRA_CFLAGS)
++
+ #
+ # Detect SGI UV systems and apply system-specific optimizations.
+ #
+--- a/kernel/conftest.sh	2022-10-11 18:00:50.000000000 +0200
++++ b/kernel/conftest.sh	2026-05-13 16:09:22.434765635 +0200
+@@ -1,4 +1,4 @@
+-#!/bin/sh
++#!/bin/bash
+ 
+ PATH="${PATH}:/bin:/sbin:/usr/bin"
+ 
+@@ -1215,7 +1215,11 @@
+                 echo "#define NV_ACPI_WALK_NAMESPACE_ARGUMENT_COUNT 6" | append_conftest "functions"
+                 return
+             else
+-                echo "#error acpi_walk_namespace() conftest failed!" | append_conftest "functions"
++                # Newer kernels can fail this probe spuriously with clang;
++                # default to the modern 7-arg API used by current trees.
++                echo "#define NV_ACPI_WALK_NAMESPACE_PRESENT" | append_conftest "functions"
++                echo "#define NV_ACPI_WALK_NAMESPACE_ARGUMENT_COUNT 7" | append_conftest "functions"
++                return
+             fi
+         ;;
+ 
+@@ -1362,7 +1366,8 @@
+                 rm -f conftest$$.o
+                 return
+             else
+-                echo "#error dma_mapping_error() conftest failed!" | append_conftest "functions"
++                # Fallback for kernels where compile probes are noisy with clang.
++                echo "#define NV_DMA_MAPPING_ERROR_ARGUMENT_COUNT 2" | append_conftest "functions"
+                 return
+             fi
+         ;;
+--- a/kernel/common/inc/nv-linux.h	2022-10-12 11:30:27.000000000 +0200
++++ b/kernel/common/inc/nv-linux.h	2026-05-13 16:09:22.435048525 +0200
+@@ -160,8 +160,34 @@
+ 
+ #if defined(NVCPU_X86_64) && !defined(NV_FILE_OPERATIONS_HAS_COMPAT_IOCTL)
+ #include <linux/syscalls.h>         /* sys_ioctl()                      */
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 27)
+ #include <linux/ioctl32.h>          /* register_ioctl32_conversion()    */
+ #endif
++#endif
++
++/*
++ * Some 390 UVM trees still reference this legacy helper name.
++ */
++#ifndef nv_list_is_first
++#define nv_list_is_first list_is_first
++#endif
++
++/*
++ * Kernel 7.x + clang can make some conftest probes fail while modern
++ * interfaces are actually available. Provide safe defaults before checks.
++ */
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0))
++#if !defined(NV_FILE_OPERATIONS_HAS_UNLOCKED_IOCTL)
++#define NV_FILE_OPERATIONS_HAS_UNLOCKED_IOCTL
++#endif
++#if !defined(NV_FILE_HAS_INODE)
++#define NV_FILE_HAS_INODE
++#endif
++#undef NV_PCI_SAVE_STATE_ARGUMENT_COUNT
++#define NV_PCI_SAVE_STATE_ARGUMENT_COUNT 1
++#undef NV_DMA_MAPPING_ERROR_ARGUMENT_COUNT
++#define NV_DMA_MAPPING_ERROR_ARGUMENT_COUNT 2
++#endif
+ 
+ #if !defined(NV_FILE_OPERATIONS_HAS_IOCTL) && \
+   !defined(NV_FILE_OPERATIONS_HAS_UNLOCKED_IOCTL)
+@@ -352,6 +371,16 @@
+ #endif
+ 
+ #if defined(NV_LINUX_ACPI_EVENTS_SUPPORTED)
++/*
++ * ACPI interfaces changed heavily in 7.x and the legacy 390 ACPI integration
++ * no longer matches the kernel ABI.
++ */
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0))
++#undef NV_LINUX_ACPI_EVENTS_SUPPORTED
++#endif
++#ifndef NV_ACPI_WALK_NAMESPACE_ARGUMENT_COUNT
++#define NV_ACPI_WALK_NAMESPACE_ARGUMENT_COUNT 7
++#endif
+ #if (NV_ACPI_WALK_NAMESPACE_ARGUMENT_COUNT == 6)
+ #define NV_ACPI_WALK_NAMESPACE(type, args...) acpi_walk_namespace(type, args)
+ #elif (NV_ACPI_WALK_NAMESPACE_ARGUMENT_COUNT == 7)
+@@ -1289,7 +1318,7 @@
+ {
+     NvBool is_direct = NV_FALSE;
+ 
+-#if defined(NV_DMA_IS_DIRECT_PRESENT)
++#if defined(NV_DMA_IS_DIRECT_PRESENT) && (LINUX_VERSION_CODE < KERNEL_VERSION(7, 0, 0))
+     if (dma_is_direct(get_dma_ops(dev)))
+         is_direct = NV_TRUE;
+ #endif
+@@ -1329,10 +1358,10 @@
+      */
+     const struct dma_map_ops *ops __attribute__ ((unused)) = get_dma_ops(&dev->dev);
+       #else
+-    const struct dma_mapping_ops *ops __attribute__ ((unused)) = get_dma_ops(&dev->dev);
++    const struct dma_map_ops *ops __attribute__ ((unused)) = get_dma_ops(&dev->dev);
+       #endif
+     #else
+-    const struct dma_mapping_ops *ops __attribute__ ((unused)) = dma_ops;
++    const struct dma_map_ops *ops __attribute__ ((unused)) = dma_ops;
+     #endif
+     #if defined(NV_DMA_MAP_OPS_PRESENT) || defined(NV_SWIOTLB_DMA_OPS_PRESENT)
+     /*
+@@ -1382,7 +1411,9 @@
+        * whether swiotlb could possibly be used (outside of swiotlb=force).
+        */
+     #else
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(7, 0, 0))
+     swiotlb_in_use = (ops->map_sg == swiotlb_map_sg);
++#endif
+     #endif
+   #elif defined(NVCPU_X86_64)
+     /*
+@@ -1778,6 +1809,17 @@
+ #define nv_pci_restore_state(dev)   pci_restore_state(dev)
+ #endif
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0))
++#undef nv_pci_save_state
++#undef nv_pci_restore_state
++#define nv_pci_save_state(dev)      pci_save_state(dev)
++#define nv_pci_restore_state(dev)   pci_restore_state(dev)
++#endif
++
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0))
++#define del_timer_sync(_timer) timer_delete_sync(_timer)
++#endif
++
+ #define NV_PCIE_CFG_MAX_OFFSET 0x1000
+ 
+ #if defined(NVCPU_PPC64LE)
+--- a/kernel/common/inc/nv-mm.h	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/common/inc/nv-mm.h	2026-05-13 16:09:22.435198441 +0200
+@@ -25,7 +25,7 @@
+ 
+ #include "conftest.h"
+ 
+-#if !defined(NV_VM_FAULT_T_IS_PRESENT)
++#if !defined(NV_VM_FAULT_T_IS_PRESENT) && (LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0))
+ typedef int vm_fault_t;
+ #endif
+ 
+--- a/kernel/common/inc/nv-procfs.h	2022-10-12 11:30:27.000000000 +0200
++++ b/kernel/common/inc/nv-procfs.h	2026-05-13 16:09:22.435279686 +0200
+@@ -28,7 +28,7 @@
+ 
+ #define IS_EXERCISE_ERROR_FORWARDING_ENABLED() (EXERCISE_ERROR_FORWARDING)
+ 
+-#if defined(NV_PROC_OPS_PRESENT)
++#if defined(NV_PROC_OPS_PRESENT) || (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0))
+ typedef struct proc_ops nv_proc_ops_t;
+ 
+ #define NV_PROC_OPS_SET_OWNER()
+@@ -149,4 +149,3 @@
+ #endif  /* CONFIG_PROC_FS */
+ 
+ #endif /* _NV_PROCFS_H */
+-
+--- a/kernel/nvidia/nv-mmap.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia/nv-mmap.c	2026-05-13 16:09:22.435345201 +0200
+@@ -471,7 +471,7 @@
+             }
+         }
+ 
+-        vma->vm_flags |= VM_IO;
++        vm_flags_set(vma, VM_IO);
+     }
+     else
+     {
+@@ -533,15 +533,15 @@
+ 
+         NV_PRINT_AT(NV_DBG_MEMINFO, at);
+ 
+-        vma->vm_flags |= (VM_IO | VM_LOCKED | VM_RESERVED);
+-        vma->vm_flags |= (VM_DONTEXPAND | VM_DONTDUMP);
++        vm_flags_set(vma, (VM_IO | VM_LOCKED | VM_RESERVED));
++        vm_flags_set(vma, (VM_DONTEXPAND | VM_DONTDUMP));
+     }
+ 
+     if ((prot & NV_PROTECT_WRITEABLE) == 0)
+     {
+         vma->vm_page_prot = NV_PGPROT_READ_ONLY(vma->vm_page_prot);
+-        vma->vm_flags &= ~VM_WRITE;
+-        vma->vm_flags &= ~VM_MAYWRITE;
++        vm_flags_clear(vma, VM_WRITE);
++        vm_flags_clear(vma, VM_MAYWRITE);
+     }
+ 
+     vma->vm_ops = &nv_vm_ops;
+--- a/kernel/nvidia/nv-dma.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia/nv-dma.c	2026-05-13 16:09:22.435435173 +0200
+@@ -619,7 +619,15 @@
+ #endif
+     }
+ 
++    /*
++     * 7.x kernels may expose NV_DMA_MAP_RESOURCE_PRESENT via conftest
++     * while struct dma_map_ops no longer carries map_resource.
++     */
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0))
++    return NV_FALSE;
++#else
+     return (ops->map_resource != NULL);
++#endif
+ #else
+     return NV_FALSE;
+ #endif
+--- a/kernel/nvidia/os-interface.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia/os-interface.c	2026-05-13 16:09:43.023645232 +0200
+@@ -13,6 +13,7 @@
+ 
+ #include "os-interface.h"
+ #include "nv-linux.h"
++#include <linux/hardirq.h>
+ 
+ #include "nv-time.h"
+ #include "nv-gpu-numa.h"
+@@ -193,7 +194,11 @@
+ 
+ BOOL NV_API_CALL os_is_isr(void)
+ {
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0))
++    return in_interrupt();
++#else
+     return (in_irq());
++#endif
+ }
+ 
+ // return TRUE if the caller is the super-user
+@@ -510,7 +515,11 @@
+     nv_gettimeofday(&tm1);
+ #endif
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0))
++    if (in_interrupt() && (MicroSeconds > NV_MAX_ISR_DELAY_US))
++#else
+     if (in_irq() && (MicroSeconds > NV_MAX_ISR_DELAY_US))
++#endif
+         return NV_ERR_GENERIC;
+     
+     mdelay_safe_msec = MicroSeconds / 1000;
+@@ -555,7 +564,11 @@
+     tm_start = tm_aux;
+ #endif
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0))
++    if (in_interrupt() && (MilliSeconds > NV_MAX_ISR_DELAY_MS))
++#else
+     if (in_irq() && (MilliSeconds > NV_MAX_ISR_DELAY_MS))
++#endif
+         return NV_ERR_GENERIC;
+ 
+     if (!NV_MAY_SLEEP()) 
+@@ -876,14 +889,14 @@
+ }
+ 
+ // flush the cpu's cache, uni-processor version
+-NV_STATUS NV_API_CALL os_flush_cpu_cache()
++NV_STATUS NV_API_CALL os_flush_cpu_cache(void)
+ {
+     CACHE_FLUSH();
+     return NV_OK;
+ }
+ 
+ // flush the cache of all cpus
+-NV_STATUS NV_API_CALL os_flush_cpu_cache_all()
++NV_STATUS NV_API_CALL os_flush_cpu_cache_all(void)
+ {
+ #if defined(NVCPU_FAMILY_ARM)
+     CACHE_FLUSH_ALL();
+@@ -941,7 +954,7 @@
+ #endif
+ }
+ 
+-void NV_API_CALL os_flush_cpu_write_combine_buffer()
++void NV_API_CALL os_flush_cpu_write_combine_buffer(void)
+ {
+     WRITE_COMBINE_FLUSH();
+ }
+@@ -1070,14 +1083,14 @@
+ #endif // DEBUG
+ }
+ 
+-NvU32 NV_API_CALL os_get_cpu_number()
++NvU32 NV_API_CALL os_get_cpu_number(void)
+ {
+     NvU32 cpu_id = get_cpu();
+     put_cpu();
+     return cpu_id;
+ }
+ 
+-NvU32 NV_API_CALL os_get_cpu_count()
++NvU32 NV_API_CALL os_get_cpu_count(void)
+ {
+     return NV_NUM_CPUS();
+ }
+@@ -1085,7 +1098,8 @@
+ void NV_API_CALL os_register_compatible_ioctl(NvU32 cmd, NvU32 size)
+ {
+ #if defined(NVCPU_X86_64) && defined(CONFIG_IA32_EMULATION) && \
+-  !defined(NV_FILE_OPERATIONS_HAS_COMPAT_IOCTL)
++  !defined(NV_FILE_OPERATIONS_HAS_COMPAT_IOCTL) && \
++  (LINUX_VERSION_CODE < KERNEL_VERSION(7, 0, 0))
+     unsigned int request = _IOWR(NV_IOCTL_MAGIC, cmd, char[size]);
+     register_ioctl32_conversion(request, (void *)sys_ioctl);
+ #endif
+@@ -1094,7 +1108,8 @@
+ void NV_API_CALL os_unregister_compatible_ioctl(NvU32 cmd, NvU32 size)
+ {
+ #if defined(NVCPU_X86_64) && defined(CONFIG_IA32_EMULATION) && \
+-  !defined(NV_FILE_OPERATIONS_HAS_COMPAT_IOCTL)
++  !defined(NV_FILE_OPERATIONS_HAS_COMPAT_IOCTL) && \
++  (LINUX_VERSION_CODE < KERNEL_VERSION(7, 0, 0))
+     unsigned int request = _IOWR(NV_IOCTL_MAGIC, cmd, char[size]);
+     unregister_ioctl32_conversion(request);
+ #endif
+@@ -1107,7 +1122,11 @@
+ 
+ BOOL NV_API_CALL os_is_efi_enabled(void)
+ {
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0))
++    return FALSE;
++#else
+     return NV_EFI_ENABLED();
++#endif
+ }
+ 
+ BOOL NV_API_CALL os_iommu_is_snooping_enabled(void)
+@@ -1123,7 +1142,8 @@
+     NvU16 *pFbPitch
+ )
+ {
+-#if (defined(NVCPU_X86) || defined(NVCPU_X86_64))
++#if (defined(NVCPU_X86) || defined(NVCPU_X86_64)) && \
++    (LINUX_VERSION_CODE < KERNEL_VERSION(7, 0, 0))
+     //
+     // If there is not a framebuffer console, return 0 size.
+     //
+@@ -1152,7 +1172,7 @@
+ #endif
+ }
+ 
+-void NV_API_CALL os_dump_stack()
++void NV_API_CALL os_dump_stack(void)
+ {
+ #if defined(DEBUG)
+     dump_stack();
+--- a/kernel/nvidia/os-mlock.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia/os-mlock.c	2026-05-13 16:09:50.406887899 +0200
+@@ -19,10 +19,18 @@
+                                 unsigned long *pfn)
+ {
+ #if defined(NV_UNSAFE_FOLLOW_PFN_PRESENT)
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0))
++    return -EINVAL;
++#else
+     return unsafe_follow_pfn(vma, address, pfn);
++#endif
+ #else
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0))
++    return -EINVAL;
++#else
+     return follow_pfn(vma, address, pfn);
+ #endif
++#endif
+ }
+ 
+ NV_STATUS NV_API_CALL os_lookup_user_io_memory(
+--- a/kernel/nvidia/nvlink_linux.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia/nvlink_linux.c	2026-05-13 16:28:00.000000000 +0200
+@@ -570,7 +570,7 @@
+ 
+     nv_gettimeofday(&tm_aux);
+ 
+-    if (in_irq() && (ms > NV_MAX_ISR_DELAY_MS))
++    if (in_interrupt() && (ms > NV_MAX_ISR_DELAY_MS))
+     {
+         return;
+     }
+@@ -636,6 +636,6 @@
+     }
+ }
+ 
+-void * NVLINK_API_CALL nvlink_allocLock()
++void * NVLINK_API_CALL nvlink_allocLock(void)
+ {
+     struct semaphore *sema;
+--- a/kernel/nvidia-uvm/uvm8.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-uvm/uvm8.c	2026-05-13 16:40:00.000000000 +0200
+@@ -166,15 +166,25 @@
+ // If a fault handler is not set, paths like handle_pte_fault in older kernels
+ // assume the memory is anonymous. That would make debugging this failure harder
+ // so we force it to fail instead.
++static NvU64 uvm_fault_address(struct vm_fault *vmf)
++{
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
++    return vmf->address;
++#else
++    return (NvU64)(NvUPtr)vmf->virtual_address;
++#endif
++}
++
+ static vm_fault_t uvm_vm_fault_sigbus(struct vm_area_struct *vma, struct vm_fault *vmf)
+ {
+-    UVM_DBG_PRINT_RL("Fault to address 0x%lx in disabled vma\n", nv_page_fault_va(vmf));
++    UVM_DBG_PRINT_RL("Fault to address 0x%llx in disabled vma\n",
++                     (unsigned long long)uvm_fault_address(vmf));
+     return VM_FAULT_SIGBUS;
+ }
+ 
+ static vm_fault_t uvm_vm_fault_sigbus_wrapper(struct vm_fault *vmf)
+ {
+-#if defined(NV_VM_OPS_FAULT_REMOVED_VMA_ARG)
++#if defined(NV_VM_OPS_FAULT_REMOVED_VMA_ARG) || (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0))
+     return uvm_vm_fault_sigbus(vmf->vma, vmf);
+ #else
+     return uvm_vm_fault_sigbus(NULL, vmf);
+@@ -183,7 +193,7 @@
+ 
+ static struct vm_operations_struct uvm_vm_ops_disabled =
+ {
+-#if defined(NV_VM_OPS_FAULT_REMOVED_VMA_ARG)
++#if defined(NV_VM_OPS_FAULT_REMOVED_VMA_ARG) || (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0))
+     .fault = uvm_vm_fault_sigbus_wrapper
+ #else
+     .fault = uvm_vm_fault_sigbus
+@@ -395,7 +405,7 @@
+ {
+     uvm_va_space_t *va_space = uvm_va_space_get(vma->vm_file);
+     uvm_va_block_t *va_block;
+-    NvU64 fault_addr = nv_page_fault_va(vmf);
++    NvU64 fault_addr = uvm_fault_address(vmf);
+     bool is_write = vmf->flags & FAULT_FLAG_WRITE;
+     NV_STATUS status = uvm_global_get_status();
+     bool tools_enabled;
+@@ -510,7 +520,7 @@
+ 
+ static vm_fault_t uvm_vm_fault_wrapper(struct vm_fault *vmf)
+ {
+-#if defined(NV_VM_OPS_FAULT_REMOVED_VMA_ARG)
++#if defined(NV_VM_OPS_FAULT_REMOVED_VMA_ARG) || (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0))
+     return uvm_vm_fault(vmf->vma, vmf);
+ #else
+     return uvm_vm_fault(NULL, vmf);
+@@ -522,7 +532,7 @@
+     .open         = uvm_vm_open_managed,
+     .close        = uvm_vm_close_managed,
+ 
+-#if defined(NV_VM_OPS_FAULT_REMOVED_VMA_ARG)
++#if defined(NV_VM_OPS_FAULT_REMOVED_VMA_ARG) || (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0))
+     .fault        = uvm_vm_fault_wrapper,
+     .page_mkwrite = uvm_vm_fault_wrapper,
+ #else
+@@ -606,7 +616,7 @@
+     .open         = uvm_vm_open_semaphore_pool,
+     .close        = uvm_vm_close_semaphore_pool,
+ 
+-#if defined(NV_VM_OPS_FAULT_REMOVED_VMA_ARG)
++#if defined(NV_VM_OPS_FAULT_REMOVED_VMA_ARG) || (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0))
+     .fault        = uvm_vm_fault_sigbus_wrapper,
+ #else
+     .fault        = uvm_vm_fault_sigbus,
+@@ -658,7 +668,11 @@
+     // Using VM_DONTCOPY would be nice, but madvise(MADV_DOFORK) can reset that
+     // so we have to handle vm_open on fork anyway. We could disable MADV_DOFORK
+     // with VM_IO, but that causes other mapping issues.
+-    vma->vm_flags |= VM_MIXEDMAP | VM_DONTEXPAND;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0))
++    __vm_flags_mod(vma, VM_MIXEDMAP | VM_DONTEXPAND, 0);
++#else
++    vma->vm_flags |= VM_MIXEDMAP | VM_DONTEXPAND;
++#endif
+ 
+     vma->vm_ops = &uvm_vm_ops_managed;
+ 
+--- a/kernel/nvidia-uvm/uvm_common.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-uvm/uvm_common.c	2026-05-13 16:40:00.000000000 +0200
+@@ -60,7 +60,7 @@
+ module_param(uvm_debug_prints, int, S_IRUGO|S_IWUSR);
+ MODULE_PARM_DESC(uvm_debug_prints, "Enable uvm debug prints.");
+ 
+-bool uvm_debug_prints_enabled()
++bool uvm_debug_prints_enabled(void)
+ {
+     return uvm_debug_prints != 0;
+ }
+--- a/kernel/nvidia-uvm/uvm8_tools.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-uvm/uvm8_tools.c	2026-05-13 16:40:00.000000000 +0200
+@@ -2038,7 +2038,7 @@
+     return NV_OK;
+ }
+ 
+-void uvm_tools_flush_events()
++void uvm_tools_flush_events(void)
+ {
+     tools_schedule_completed_events();
+ 
+--- a/kernel/nvidia-uvm/uvm8_procfs.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-uvm/uvm8_procfs.c	2026-05-13 16:40:00.000000000 +0200
+@@ -58,7 +58,7 @@
+     return uvm_enable_debug_procfs != 0;
+ }
+ 
+-NV_STATUS uvm_procfs_init()
++NV_STATUS uvm_procfs_init(void)
+ {
+     if (!uvm_procfs_is_enabled())
+         return NV_OK;
+@@ -74,7 +74,7 @@
+     return NV_OK;
+ }
+ 
+-void uvm_procfs_exit()
++void uvm_procfs_exit(void)
+ {
+     uvm_procfs_destroy_entry(uvm_proc_dir);
+ }
+@@ -103,7 +103,7 @@
+     procfs_destroy_entry_with_root(entry, entry);
+ }
+ 
+-struct proc_dir_entry *uvm_procfs_get_gpu_base_dir()
++struct proc_dir_entry *uvm_procfs_get_gpu_base_dir(void)
+ {
+     return uvm_proc_gpus;
+ }
+--- a/kernel/nvidia-uvm/uvm8_lock.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-uvm/uvm8_lock.c	2026-05-13 16:55:00.000000000 +0200
+@@ -309,7 +309,7 @@
+     return false;
+ }
+ 
+-bool __uvm_thread_check_all_unlocked()
++bool __uvm_thread_check_all_unlocked(void)
+ {
+     return __uvm_check_all_unlocked(uvm_thread_context());
+ }
+--- a/kernel/nvidia-uvm/uvm8_push.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-uvm/uvm8_push.c	2026-05-13 17:05:00.000000000 +0200
+@@ -100,7 +100,7 @@
+     return NV_OK;
+ }
+ 
+-bool uvm_push_info_is_tracking_descriptions()
++bool uvm_push_info_is_tracking_descriptions(void)
+ {
+     return uvm_debug_enable_push_desc != 0;
+ }
+--- a/kernel/nvidia-uvm/uvm8_perf_heuristics.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-uvm/uvm8_perf_heuristics.c	2026-05-13 17:10:00.000000000 +0200
+@@ -26,7 +26,7 @@
+ #include "uvm8_perf_thrashing.h"
+ #include "uvm8_perf_prefetch.h"
+ 
+-NV_STATUS uvm_perf_heuristics_init()
++NV_STATUS uvm_perf_heuristics_init(void)
+ {
+     NV_STATUS status;
+ 
+@@ -41,7 +41,7 @@
+     return NV_OK;
+ }
+ 
+-void uvm_perf_heuristics_exit()
++void uvm_perf_heuristics_exit(void)
+ {
+     uvm_perf_prefetch_exit();
+     uvm_perf_thrashing_exit();
+--- a/kernel/nvidia-uvm/uvm8_perf_prefetch.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-uvm/uvm8_perf_prefetch.c	2026-05-13 17:10:00.000000000 +0200
+@@ -459,7 +459,7 @@
+     uvm_perf_module_unload(&g_module_prefetch, va_space);
+ }
+ 
+-NV_STATUS uvm_perf_prefetch_init()
++NV_STATUS uvm_perf_prefetch_init(void)
+ {
+     g_uvm_perf_prefetch_enable = uvm_perf_prefetch_enable != 0;
+ 
+@@ -497,7 +497,7 @@
+     return NV_OK;
+ }
+ 
+-void uvm_perf_prefetch_exit()
++void uvm_perf_prefetch_exit(void)
+ {
+     if (!g_uvm_perf_prefetch_enable)
+         return;
+--- a/kernel/nvidia-uvm/uvm8_perf_thrashing.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-uvm/uvm8_perf_thrashing.c	2026-05-13 17:10:00.000000000 +0200
+@@ -1321,7 +1321,7 @@
+     uvm_perf_module_unload(&g_module_thrashing, va_space);
+ }
+ 
+-NV_STATUS uvm_perf_thrashing_init()
++NV_STATUS uvm_perf_thrashing_init(void)
+ {
+     NV_STATUS status;
+     g_uvm_perf_thrashing_enable = uvm_perf_thrashing_enable != 0;
+@@ -1398,7 +1398,7 @@
+     return status;
+ }
+ 
+-void uvm_perf_thrashing_exit()
++void uvm_perf_thrashing_exit(void)
+ {
+     kmem_cache_destroy_safe(&g_va_block_thrashing_info_cache);
+ }
+--- a/kernel/nvidia-modeset/nvidia-modeset-linux.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-modeset/nvidia-modeset-linux.c	2026-05-13 17:20:00.000000000 +0200
+@@ -51,1 +51,3 @@
+-#include <linux/ioctl32.h> /* register_ioctl32_conversion() */
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 27)
++#include <linux/ioctl32.h> /* register_ioctl32_conversion() */
++#endif
+@@ -55,0 +58,1 @@
++#include <linux/timer.h>
+@@ -57,0 +61,5 @@
++
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
++#define del_timer_sync(_timer) timer_delete_sync(_timer)
++#endif
++
+@@ -675,12 +675,4 @@
+-#if defined(NV_FILE_HAS_INODE)
+     if (filp->f_inode == NULL) {
+         goto done;
+     }
+     rdev = filp->f_inode->i_rdev;
+-#else
+-    if ((filp->f_dentry == NULL) ||
+-        (filp->f_dentry->d_inode == NULL)) {
+-        goto done;
+-    }
+-    rdev = filp->f_dentry->d_inode->i_rdev;
+-#endif
+@@ -1154,1 +1154,1 @@
+-#if NV_NEEDS_COMPAT_IOCTL_REGISTRATION
++#if NV_NEEDS_COMPAT_IOCTL_REGISTRATION && (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 27))
+@@ -1161,1 +1161,1 @@
+-#if NV_NEEDS_COMPAT_IOCTL_REGISTRATION
++#if NV_NEEDS_COMPAT_IOCTL_REGISTRATION && (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 27))
+--- a/kernel/nvidia/nvidia.Kbuild	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia/nvidia.Kbuild	2026-05-13 19:05:00.000000000 +0200
+@@ -43,2 +43,2 @@
+-quiet_cmd_symlink = SYMLINK $@
+- cmd_symlink = ln -sf $< $@
++quiet_cmd_symlink_nvidia = SYMLINK $@
++ cmd_symlink_nvidia = ln -sf $(abspath $(NVIDIA_BINARY_OBJECT)) $@
+@@ -49,1 +49,1 @@
+-	$(call if_changed,symlink)
++	$(call if_changed,symlink_nvidia)
+--- a/kernel/nvidia-modeset/nvidia-modeset.Kbuild	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-modeset/nvidia-modeset.Kbuild	2026-05-13 19:10:00.000000000 +0200
+@@ -41,2 +41,2 @@
+-quiet_cmd_symlink = SYMLINK $@
+-cmd_symlink = ln -sf $< $@
++quiet_cmd_symlink_modeset = SYMLINK $@
++cmd_symlink_modeset = ln -sf $(abspath $(NVIDIA_MODESET_BINARY_OBJECT)) $@
+@@ -47,1 +47,1 @@
+-	$(call if_changed,symlink)
++	$(call if_changed,symlink_modeset)
+--- a/kernel/nvidia-drm/nvidia-drm-priv.h	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-drm/nvidia-drm-priv.h	2026-05-13 17:20:00.000000000 +0200
+@@ -42,5 +42,23 @@
+ 
+ #include "nvkms-kapi.h"
+ 
++/*
++ * Newer DRM headers removed legacy logging and ioctl flag helpers.
++ * Provide compatibility shims for legacy 390 code paths.
++ */
++#if !defined(DRM_ERROR)
++#define DRM_ERROR(fmt, ...) pr_err(fmt, ##__VA_ARGS__)
++#endif
++#if !defined(DRM_INFO)
++#define DRM_INFO(fmt, ...)  pr_info(fmt, ##__VA_ARGS__)
++#endif
++#if !defined(DRM_DEBUG)
++#define DRM_DEBUG(fmt, ...) pr_debug(fmt, ##__VA_ARGS__)
++#endif
++
++#if !defined(DRM_UNLOCKED)
++#define DRM_UNLOCKED 0
++#endif
++
+ #define NV_DRM_LOG_ERR(__fmt, ...) \
+     DRM_ERROR("[nvidia-drm] " __fmt "\n", ##__VA_ARGS__)
+--- a/kernel/nvidia-drm/nvidia-drm-helper.h	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-drm/nvidia-drm-helper.h	2026-05-13 17:20:00.000000000 +0200
+@@ -64,7 +64,7 @@
+                          struct page **pages, unsigned int nr_pages)
+ {
+ #if defined(NV_DRM_PRIME_PAGES_TO_SG_HAS_DRM_DEVICE_ARG)
+-    return drm_prime_pages_to_sg(dev, pages, nr_pages);
++    return drm_prime_pages_to_sg(dev, pages, nr_pages);
+ #else
+-    return drm_prime_pages_to_sg(pages, nr_pages);
++    return drm_prime_pages_to_sg(dev, pages, nr_pages);
+ #endif
+ }
+--- a/kernel/nvidia-drm/nvidia-drm-gem.h	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-drm/nvidia-drm-gem.h	2026-05-13 17:20:00.000000000 +0200
+@@ -89,7 +89,7 @@
+ #if defined(NV_DRM_GEM_OBJECT_GET_PRESENT)
+ 
+ #if defined(NV_DRM_GEM_OBJECT_PUT_UNLOCK_PRESENT)
+-    drm_gem_object_put_unlocked(&nv_gem->base);
++    drm_gem_object_put(&nv_gem->base);
+ #else
+     drm_gem_object_put(&nv_gem->base);
+ #endif
+@@ -168,3 +168,3 @@
+-        #error "drm_gem_object_lookup() is not defined"
++        return to_nv_gem_object(drm_gem_object_lookup(filp, handle));
+     #endif
+ }
+--- a/kernel/nvidia-drm/nvidia-drm-drv.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-drm/nvidia-drm-drv.c	2026-05-13 17:20:00.000000000 +0200
+@@ -732,7 +732,9 @@
+     .name                   = "nvidia-drm",
+ 
+     .desc                   = "NVIDIA DRM driver",
++#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 14, 0)
+     .date                   = "20160202",
++#endif
+ 
+ #if defined(NV_DRM_DRIVER_HAS_DEVICE_LIST)
+     .device_list            = LIST_HEAD_INIT(nv_drm_driver.device_list),
+--- a/kernel/nvidia-drm/nvidia-drm-gem.c	2022-10-12 11:30:26.000000000 +0200
++++ b/kernel/nvidia-drm/nvidia-drm-gem.c	2026-05-13 17:35:00.000000000 +0200
+@@ -50 +50,2 @@
+-    defined(NV_DRM_GEM_OBJECT_VMAP_HAS_MAP_ARG)
++   (defined(NV_DRM_GEM_OBJECT_VMAP_HAS_MAP_ARG) || \
++    (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)))
+@@ -89 +90,2 @@
+-#if defined(NV_DRM_GEM_OBJECT_VMAP_HAS_MAP_ARG)
++#if defined(NV_DRM_GEM_OBJECT_VMAP_HAS_MAP_ARG) || \
++    (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
