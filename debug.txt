@@ -1,0 +1,152 @@
+--- Patch: nvidia-settings-libxnvctrl_so.diff ---
+SKIP: whitelist nvidia-settings: libxnvctrl_patch=true
+--- Patch: nvidia-open-gcc-ibt-sls.diff ---
+SKIP: whitelist open: < 525
+--- Patch: Add-IBT-support.diff ---
+SKIP: whitelist open: 570
+--- Patch: make-modeset-fbdev-default.diff ---
+SKIP: whitelist: open 550-564 ou closed 560/kernel >= 6.11
+--- Patch: make-modeset-fbdev-default-565.diff ---
+SKIP: whitelist: 565 uniquement
+--- Patch: silence-event-assert-until-570.diff ---
+SKIP: whitelist open: 565
+--- Patch: fix-hdmi-names.diff ---
+SKIP: whitelist open: 565
+--- Patch: Enable-atomic-kernel-modesetting-by-default.diff ---
+SKIP: whitelist open: 570
+--- Patch: 0001-Enable-atomic-kernel-modesetting-by-default.diff ---
+SKIP: whitelist open: 580-594
+--- Patch: 0002-Add-IBT-support.diff ---
+SKIP: whitelist open: >= 580
+--- Patch: fix-hw-cursor-kde.diff ---
+SKIP: whitelist open: 580
+--- Patch: nvidia-bsb-dsc-fix.diff ---
+SKIP: whitelist open: >= 580 + bsb_dsc_fix=true
+--- Patch: linux-version.diff ---
+SKIP: whitelist closed: <= 455
+--- Patch: 455-crashfix.diff ---
+SKIP: whitelist closed: 455.2/455.3/455.4
+--- Patch: 01-ipmi-vm.diff ---
+SKIP: whitelist closed: old ipmi/vm + kernel >= 4.20
+--- Patch: 02-ipmi-vm.diff ---
+SKIP: whitelist closed: 410/415 ipmi/vm addon + kernel >= 4.20
+--- Patch: list_is_first.diff ---
+SKIP: whitelist closed: < 418.56 + kernel >= 5.1
+--- Patch: legacy-kernel-6.4.diff ---
+SKIP: whitelist closed: 470.199 + kernel >= 6.4
+--- Patch: legacy-kernel-6.5.diff ---
+SKIP: whitelist closed: 470.199 + kernel >= 6.5
+--- Patch: legacy-kernel-6.6.diff ---
+SKIP: whitelist closed: 470.199 + kernel >= 6.6
+--- Patch: kernel-6.12.patch ---
+SKIP: whitelist closed: 565.57 + kernel >= 6.12
+--- Patch: kernel-6.17.patch ---
+SKIP: whitelist absente dans PKGBUILD.txt pour kernel-6.17.patch
+--- Patch: kernel-6.19.patch ---
+SKIP: whitelist open: 590 + kernel >= 6.19
+--- Patch: kernel-6.19-470.patch ---
+Target: kernel-dkms, -p1 (whitelist closed: 470 + kernel >= 6.19)
+checking file nvidia-drm/nvidia-drm-crtc.c
+checking file nvidia-drm/nvidia-drm-drv.c
+Hunk #1 succeeded at 598 (offset -18 lines).
+checking file nvidia-drm/nvidia-drm-helper.c
+checking file nvidia-drm/nvidia-drm-helper.h
+checking file nvidia-drm/nvidia-drm-modeset.c
+checking file common/inc/nv-memdbg.h
+checking file common/inc/nv-time.h
+checking file conftest.sh
+Hunk #1 succeeded at 208 with fuzz 3.
+Hunk #2 succeeded at 5006 (offset -12 lines).
+checking file nvidia-drm/nvidia-drm-priv.h
+checking file nvidia/nv-dma.c
+checking file nvidia/os-interface.c
+patching file nvidia-drm/nvidia-drm-crtc.c
+patching file nvidia-drm/nvidia-drm-drv.c
+Hunk #1 succeeded at 598 (offset -18 lines).
+patching file nvidia-drm/nvidia-drm-helper.c
+patching file nvidia-drm/nvidia-drm-helper.h
+patching file nvidia-drm/nvidia-drm-modeset.c
+patching file common/inc/nv-memdbg.h
+patching file common/inc/nv-time.h
+patching file conftest.sh
+Hunk #1 succeeded at 208 with fuzz 3.
+Hunk #2 succeeded at 5006 (offset -12 lines).
+patching file nvidia-drm/nvidia-drm-priv.h
+patching file nvidia/nv-dma.c
+patching file nvidia/os-interface.c
+--- Patch: kernel-7.0.patch ---
+SKIP: whitelist open: 590/595 <= 595.58.03 + kernel >= 7.0
+--- Patch: kernel-7.0-580.patch ---
+SKIP: whitelist: 580 <= 580.142 + kernel >= 7.0
+--- Patch: kernel-7.0-470.patch ---
+Target: kernel-dkms, -p1 (whitelist closed: 470 + kernel >= 7.0)
+checking file nvidia-drm/nvidia-dma-fence-helper.h
+patching file nvidia-drm/nvidia-dma-fence-helper.h
+--- Patch: kernel-7.1.patch ---
+SKIP: whitelist open: 595 <= 595.58.03 + kernel >= 7.1
+--- Patch: gcc-14-470.diff ---
+Target: ., -p1 (whitelist closed: 470 + GCC 14)
+checking file kernel-dkms/conftest.sh
+Hunk #1 succeeded at 101 (offset 1 line).
+patching file kernel-dkms/conftest.sh
+Hunk #1 succeeded at 101 (offset 1 line).
+--- Patch: kernel-7.0-470-all-compat.patch ---
+Target: ., -p1 (whitelist locale: 470 + kernel >= 7.0)
+checking file kernel-dkms/Kbuild
+Hunk #1 succeeded at 74 (offset 1 line).
+checking file kernel-dkms/Kbuild
+Hunk #1 succeeded at 68 with fuzz 3.
+checking file kernel-dkms/nvidia/nvidia.Kbuild
+Hunk #1 succeeded at 169 with fuzz 3.
+Hunk #2 succeeded at 192 with fuzz 2 (offset 3 lines).
+checking file kernel-dkms/common/inc/nv-mm.h
+Hunk #1 succeeded at 23 with fuzz 1.
+checking file kernel-dkms/common/inc/nv-linux.h
+Hunk #2 succeeded at 212 (offset -4 lines).
+Hunk #3 succeeded at 332 (offset -4 lines).
+Hunk #4 succeeded at 1237 (offset -10 lines).
+Hunk #5 succeeded at 1821 (offset -10 lines).
+checking file kernel-dkms/common/inc/nv-procfs-utils.h
+Hunk #1 succeeded at 11 (offset 1 line).
+Hunk #2 succeeded at 29 (offset -1 lines).
+checking file kernel-dkms/nvidia/nv-mmap.c
+checking file kernel-dkms/conftest.sh
+Hunk #1 succeeded at 162 (offset -1 lines).
+Hunk #2 succeeded at 212 with fuzz 3 (offset 1 line).
+Hunk #3 succeeded at 2398 (offset -9 lines).
+Hunk #4 succeeded at 3337 (offset -9 lines).
+checking file kernel-dkms/nvidia/os-mlock.c
+checking file kernel-dkms/nvidia/os-interface.c
+patching file kernel-dkms/Kbuild
+Hunk #1 succeeded at 74 (offset 1 line).
+patching file kernel-dkms/Kbuild
+Hunk #1 succeeded at 68 with fuzz 3.
+patching file kernel-dkms/nvidia/nvidia.Kbuild
+Hunk #1 succeeded at 169 with fuzz 3.
+Hunk #2 succeeded at 192 with fuzz 2 (offset 3 lines).
+patching file kernel-dkms/common/inc/nv-mm.h
+Hunk #1 succeeded at 23 with fuzz 1.
+patching file kernel-dkms/common/inc/nv-linux.h
+Hunk #2 succeeded at 212 (offset -4 lines).
+Hunk #3 succeeded at 332 (offset -4 lines).
+Hunk #4 succeeded at 1237 (offset -10 lines).
+Hunk #5 succeeded at 1821 (offset -10 lines).
+patching file kernel-dkms/common/inc/nv-procfs-utils.h
+Hunk #1 succeeded at 11 (offset 1 line).
+Hunk #2 succeeded at 29 (offset -1 lines).
+patching file kernel-dkms/nvidia/nv-mmap.c
+patching file kernel-dkms/conftest.sh
+Hunk #1 succeeded at 162 (offset -1 lines).
+Hunk #2 succeeded at 212 with fuzz 3 (offset 1 line).
+Hunk #3 succeeded at 2398 (offset -9 lines).
+Hunk #4 succeeded at 3337 (offset -9 lines).
+patching file kernel-dkms/nvidia/os-mlock.c
+patching file kernel-dkms/nvidia/os-interface.c
+--- Patch: gcc-14.diff ---
+SKIP: whitelist closed: non-470 + GCC 14
+--- Patch: gcc-15.diff ---
+SKIP: whitelist: GCC 15
+--- Patch: GFP_RETRY_MAYFAIL-test.diff ---
+SKIP: whitelist absente dans PKGBUILD.txt pour GFP_RETRY_MAYFAIL-test.diff
+--- Patch: 99-local-kernel-compat-390.patch ---
+SKIP: serie 390 locale

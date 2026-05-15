@@ -48,16 +48,12 @@ diff --git a/kernel-dkms/common/inc/nv-mm.h b/kernel-dkms/common/inc/nv-mm.h
 index a3eb362..a3ed350 100644
 --- a/kernel-dkms/common/inc/nv-mm.h
 +++ b/kernel-dkms/common/inc/nv-mm.h
-@@ -23,13 +23,14 @@
+@@ -23,8 +23,9 @@
  #ifndef __NV_MM_H__
  #define __NV_MM_H__
  
 +#include <linux/version.h>
  #include "conftest.h"
- 
- #if defined(NV_MM_STRUCT_HAS_MMAP_LOCK)
- #define mmap_sem mmap_lock
- #endif
  
 -#if !defined(NV_VM_FAULT_T_IS_PRESENT)
 +#if !defined(NV_VM_FAULT_T_IS_PRESENT) && (LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0))
@@ -270,7 +266,15 @@ diff --git a/kernel-dkms/common/inc/nv-procfs-utils.h b/kernel-dkms/common/inc/n
 index db060cc..3494494 100644
 --- a/kernel-dkms/common/inc/nv-procfs-utils.h
 +++ b/kernel-dkms/common/inc/nv-procfs-utils.h
-@@ -29,7 +29,7 @@
+@@ -10,6 +10,7 @@
+ #define _NV_PROCFS_UTILS_H
+ 
+ #include "conftest.h"
++#include <linux/version.h>
+ 
+ #ifdef CONFIG_PROC_FS
+ #include <linux/proc_fs.h>
+@@ -29,7 +30,7 @@
  
  #define IS_EXERCISE_ERROR_FORWARDING_ENABLED() (EXERCISE_ERROR_FORWARDING)
  
@@ -348,15 +352,19 @@ index 8f999a6..54c569d 100755
 diff --git a/kernel-dkms/nvidia/os-mlock.c b/kernel-dkms/nvidia/os-mlock.c
 --- a/kernel-dkms/nvidia/os-mlock.c
 +++ b/kernel-dkms/nvidia/os-mlock.c
-@@ -17,9 +17,9 @@ static inline int nv_follow_pfn(struct vm_area_struct *vma,
+@@ -17,10 +17,13 @@ static inline int nv_follow_pfn(struct vm_area_struct *vma,
                                  unsigned long address,
                                  unsigned long *pfn)
  {
 -#if defined(NV_UNSAFE_FOLLOW_PFN_PRESENT)
-+#if defined(NV_UNSAFE_FOLLOW_PFN_PRESENT) || (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0))
++#if defined(NV_UNSAFE_FOLLOW_PFN_PRESENT)
      return unsafe_follow_pfn(vma, address, pfn);
- #else
+-#else
++#elif (LINUX_VERSION_CODE < KERNEL_VERSION(7, 0, 0))
      return follow_pfn(vma, address, pfn);
++#else
++    /* Kernel >= 7.0: follow_pfn helpers may be unavailable. */
++    return -1;
  #endif
  }
 
