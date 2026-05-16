@@ -427,6 +427,26 @@ major_of_version() {
   printf '%s\n' "${1%%.*}"
 }
 
+gpu_support_label_for_version() {
+  local version=$1 base_url=$2 major
+  major=$(major_of_version "$version")
+
+  case "$major" in
+    390) printf '%s' "Legacy Fermi (GeForce 4xx/5xx)" ;;
+    470) printf '%s' "Legacy Kepler (GeForce 6xx/7xx)" ;;
+    495|510|515|520|525|530|535|545|550|555|560|565|570|575|580)
+      printf '%s' "Maxwell/Pascal/Turing/Ampere/Ada - GTX 9xx/10xx/16xx, RTX 20xx/30xx/40xx"
+      ;;
+    590|595|6[0-9][0-9]|[7-9][0-9][0-9])
+      printf '%s' "Turing/Ampere/Ada/Blackwell - RTX 20xx/30xx/40xx/50xx"
+      ;;
+    460|465)
+      printf '%s' "Maxwell/Pascal/Turing - GTX 9xx/10xx/16xx, RTX 20xx"
+      ;;
+    *) printf '%s' "Serie ${major}.x" ;;
+  esac
+}
+
 runfile_is_valid() {
   local file=$1
   [[ -f $file ]] || return 1
@@ -452,10 +472,30 @@ collect_valid_runfiles() {
 
 get_locale_mirror_urls() {
   local raw locale_code lang_code country_code
-  raw="${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}"
+  raw="${LANG:-${LC_ALL:-${LC_MESSAGES:-${LANGUAGE:-}}}}"
+
+  # Dans certains contextes (shell non-login, sudo, service), LANG peut valoir C/POSIX.
+  # On tente alors la locale systeme Debian pour retrouver la preference utilisateur.
+  if [[ -z $raw || ${raw,,} == c || ${raw,,} == c.utf-8 || ${raw,,} == posix ]]; then
+    if [[ -r /etc/default/locale ]]; then
+      raw=$(awk -F= '
+        /^LANG=/{gsub(/"/,"",$2); if (!lang) lang=$2}
+        /^LANGUAGE=/{gsub(/"/,"",$2); if (!language) language=$2}
+        END{
+          if (lang && lang !~ /^(C|C\.UTF-8|POSIX)$/) print lang;
+          else if (language) print language;
+        }
+      ' /etc/default/locale)
+    fi
+  fi
+
+  # LANGUAGE peut contenir une liste "fr_FR:fr", on garde l'entree prioritaire.
+  raw="${raw%%:*}"
   raw="${raw%%.*}"
   raw="${raw%%@*}"
   locale_code="${raw,,}"
+  # Certains environnements utilisent fr-FR au lieu de fr_FR.
+  locale_code="${locale_code//-/_}"
 
   lang_code=''
   country_code=''
@@ -483,11 +523,15 @@ get_locale_mirror_urls() {
 
 pick_online_runfile() {
   local base_url versions selected_ver run_url run_name candidate choice local_versions
+  local locale_first_mirror=''
+  local warned_locale_fallback='no'
+  local probe_url=''
   local stable_major='' feature_major='' legacy_major=''
   local detected_gpu=''
   local latest_version=''
   local branch_choice='stable' gpu_choice='auto' version_choice='' filter_input latest_available recommended_available default_choice
   local has_gpu_detected='no' recommended_label='' menu_prompt=''
+  local max_versions_display=${MAX_VERSIONS_DISPLAY:-140}
   local -a listed_versions mirror_urls all_versions branch_versions gpu_versions filtered_versions
   local -a branch_menu gpu_menu version_menu
   PICKED_RUNFILE=''
@@ -501,6 +545,7 @@ pick_online_runfile() {
   info "Recuperation des versions disponibles..."
 
   mapfile -t mirror_urls < <(get_locale_mirror_urls)
+  locale_first_mirror="${mirror_urls[0]:-}"
   mirror_urls+=(
     "https://download.nvidia.com/XFree86/Linux-x86_64"
     "https://us.download.nvidia.com/XFree86/Linux-x86_64"
@@ -532,6 +577,11 @@ pick_online_runfile() {
         fi
       fi
     done
+  fi
+
+  if [[ -n $locale_first_mirror && $base_url != "$locale_first_mirror" && $warned_locale_fallback != yes ]]; then
+    warn "Miroir local (${locale_first_mirror}) indisponible ou non listable, fallback vers ${base_url}."
+    warned_locale_fallback='yes'
   fi
 
   if [[ -z $base_url ]]; then
@@ -571,6 +621,18 @@ pick_online_runfile() {
     return 1
   fi
   latest_available="${all_versions[0]}"
+
+  # Certains miroirs locaux (ex: fr.*) servent les runfiles sans lister l'index.
+  # Si le miroir local est defini, on le privilegie quand le runfile latest y existe.
+  if [[ -n $locale_first_mirror && $base_url != "$locale_first_mirror" ]]; then
+    probe_url="${locale_first_mirror}/${latest_available}/NVIDIA-Linux-x86_64-${latest_available}.run"
+    if curl -fsI "$probe_url" >/dev/null 2>&1; then
+      info "Miroir local valide sans listing: ${locale_first_mirror} (runfile accessible)."
+      base_url="$locale_first_mirror"
+      warned_locale_fallback='no'
+    fi
+  fi
+
   recommended_available="${BRANCH_STABLE_VERSION:-}"
   [[ -z $recommended_available ]] && recommended_available="${BRANCH_FEATURE_VERSION:-}"
   [[ -z $recommended_available ]] && recommended_available="${BRANCH_BETA_VERSION:-}"
@@ -607,7 +669,7 @@ pick_online_runfile() {
       "stable"  "Branche production"
       "feature" "Branche nouvelles fonctions"
       "beta"    "Derniere beta"
-      "legacy"  "Branches anciennes/legacy"
+      "legacy"  "Legacy (GTX 5xx -> GTX 10xx)"
       "all"     "Toutes les versions"
     )
     choice=$(ui_menu "Etape 1/3 - Branche" "$menu_prompt" no yes "$default_choice" "${branch_menu[@]}")
@@ -649,11 +711,7 @@ pick_online_runfile() {
         fi
         ;;
       legacy)
-        if [[ -n $legacy_major ]]; then
-          mapfile -t branch_versions < <(printf '%s\n' "${all_versions[@]}" | awk -F. -v lm="$legacy_major" '$1+0 <= lm+0')
-        else
-          mapfile -t branch_versions < <(printf '%s\n' "${all_versions[@]}" | grep -E '^(470|390|340|304|173|96|71|1\.0-)')
-        fi
+        mapfile -t branch_versions < <(printf '%s\n' "${all_versions[@]}" | grep -E '^(580|470|390)\.')
         ;;
       all)
         branch_versions=("${all_versions[@]}")
@@ -663,7 +721,14 @@ pick_online_runfile() {
       warn "Aucune version pour cette branche, retour a la liste complete."
       branch_versions=("${all_versions[@]}")
     fi
-    mapfile -t listed_versions < <(printf '%s\n' "${branch_versions[@]}" | head -n 140)
+    if [[ $branch_choice == all ]]; then
+      listed_versions=("${branch_versions[@]}")
+    else
+      mapfile -t listed_versions < <(printf '%s\n' "${branch_versions[@]}" | head -n "$max_versions_display")
+      if ((${#branch_versions[@]} > ${#listed_versions[@]})); then
+        warn "Affichage limite aux ${#listed_versions[@]} versions les plus recentes (MAX_VERSIONS_DISPLAY=${max_versions_display})."
+      fi
+    fi
 
     ui_header
     filtered_versions=("${listed_versions[@]}")
@@ -699,7 +764,7 @@ pick_online_runfile() {
       ui_header
       version_menu=()
       for i in "${!filtered_versions[@]}"; do
-        version_menu+=("${filtered_versions[$i]}" "Driver ${filtered_versions[$i]}")
+        version_menu+=("${filtered_versions[$i]}" "$(gpu_support_label_for_version "${filtered_versions[$i]}" "$base_url")")
       done
       choice=$(ui_menu "Etape 3/3 - Version" "Choisir une version (${#filtered_versions[@]} disponibles)" yes yes "${filtered_versions[0]}" "${version_menu[@]}")
       if [[ $choice == "$UI_QUIT" ]]; then
