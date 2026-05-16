@@ -70,17 +70,14 @@ source=(
   "kernel-6.12.patch"
   "kernel-6.17.patch"
   "kernel-6.19.patch"
-  "kernel-6.19-470.patch"
+  "470-kernel-7.0.patch"
   "kernel-7.0.patch"
   "kernel-7.0-580.patch"
-  "kernel-7.0-470.patch"
   "kernel-7.1.patch"
-  "gcc-14-470.diff"
-  "kernel-7.0-470-all-compat.patch"
   "gcc-14.diff"
   "gcc-15.diff"
   "GFP_RETRY_MAYFAIL-test.diff"
-  "99-local-kernel-compat-390.patch"
+  "390-kernel-7.0.patch"
 )
 sha256sums=('SKIP')
 maintainer=("xdavius <xdavius@gmail.com>")
@@ -147,7 +144,7 @@ _extract_patch_kernel_tag() {
 
 _extract_patch_driver_tag() {
   local p=$1
-  # Exemples: kernel-6.19-470.patch, gcc-14-470.diff, *-565.diff, *-580.patch
+  # Exemples: kernel-6.19-470.patch, *-565.diff, *-580.patch
   if [[ $p =~ -([0-9]{3})([.-]|$) ]]; then
     echo "${BASH_REMATCH[1]}"
     return 0
@@ -199,14 +196,21 @@ _cond_closed_470199_k65() { _patch_is_closed && _driver_matches "470.199*" && _k
 _cond_closed_470199_k66() { _patch_is_closed && _driver_matches "470.199*" && _kernel_ge "$(_kernel_triplet)" "6.6.0"; }
 _cond_closed_56557_k612() { _patch_is_closed && _driver_matches "565.57*" && _kernel_ge "$(_kernel_triplet)" "6.12.0"; }
 _cond_open_590_k619() { _patch_is_open && [[ $(_ver_major) == 590 ]] && _kernel_ge "$(_kernel_triplet)" "6.19.0"; }
-_cond_closed_470_k619() { _patch_is_closed && [[ $(_ver_major) == 470 ]] && _kernel_ge "$(_kernel_triplet)" "6.19.0"; }
+_cond_closed_470xx() { _patch_is_closed && [[ $(_ver_major) == 470 ]]; }
+_cond_closed_470xx_k610() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "6.10.0"; }
+_cond_closed_470xx_k612() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "6.12.0"; }
+_cond_closed_470xx_k613() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "6.13.0"; }
+_cond_closed_470xx_k614() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "6.14.0"; }
+_cond_closed_470xx_k615() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "6.15.0"; }
+_cond_closed_470xx_k617() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "6.17.0"; }
+_cond_closed_470xx_k619() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "6.19.0"; }
+_cond_closed_470xx_k70() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "7.0.0"; }
 _cond_open_590_595_k70() {
   _patch_is_open && [[ $(_ver_major) == 590 || $(_ver_major) == 595 ]] &&
     [[ "$pkgver" != "595.44.06" && "$pkgver" != "595.44.07" ]] &&
     _kernel_ge "$(_kernel_triplet)" "7.0.0" && _ver_le "$pkgver" "595.58.03"
 }
 _cond_580_k70() { [[ $(_ver_major) == 580 ]] && _kernel_ge "$(_kernel_triplet)" "7.0.0" && _ver_le "$pkgver" "580.142"; }
-_cond_closed_470_k70() { _patch_is_closed && [[ $(_ver_major) == 470 ]] && _kernel_ge "$(_kernel_triplet)" "7.0.0"; }
 _cond_open_595_k71() {
   _patch_is_open && [[ $(_ver_major) == 595 ]] &&
     [[ "$pkgver" != "595.44.06" && "$pkgver" != "595.44.07" ]] &&
@@ -235,7 +239,7 @@ _patch_rules_init() {
     _patch_reason["$p"]=$reason
   }
 
-  _patch_rule_add "99-local-kernel-compat-390.patch" "." 1 _cond_major_390 "serie 390 locale"
+  _patch_rule_add "390-kernel-7.0.patch" "." 1 _cond_major_390 "serie 390 locale"
   _patch_rule_add "nvidia-settings-libxnvctrl_so.diff" "." 1 _cond_libxnvctrl "whitelist nvidia-settings: libxnvctrl_patch=true"
 
   _patch_rule_add "nvidia-open-gcc-ibt-sls.diff" auto 1 _cond_open_lt525 "whitelist open: < 525"
@@ -261,13 +265,10 @@ _patch_rules_init() {
   _patch_rule_add "kernel-6.12.patch" auto 1 _cond_closed_56557_k612 "whitelist closed: 565.57 + kernel >= 6.12"
   _patch_rule_add "kernel-6.17.patch" "" "" _cond_never "whitelist absente dans PKGBUILD.txt pour kernel-6.17.patch"
   _patch_rule_add "kernel-6.19.patch" auto 2 _cond_open_590_k619 "whitelist open: 590 + kernel >= 6.19"
-  _patch_rule_add "kernel-6.19-470.patch" kernel-dkms 1 _cond_closed_470_k619 "whitelist closed: 470 + kernel >= 6.19"
+  _patch_rule_add "470-kernel-7.0.patch" kernel-dkms 1 _cond_closed_470xx_k612 "whitelist closed: 470xx + kernel >= 6.12 (cumulative)"
   _patch_rule_add "kernel-7.0.patch" auto 2 _cond_open_590_595_k70 "whitelist open: 590/595 <= 595.58.03 + kernel >= 7.0"
   _patch_rule_add "kernel-7.0-580.patch" auto 1 _cond_580_k70 "whitelist: 580 <= 580.142 + kernel >= 7.0"
-  _patch_rule_add "kernel-7.0-470.patch" kernel-dkms 1 _cond_closed_470_k70 "whitelist closed: 470 + kernel >= 7.0"
-  _patch_rule_add "kernel-7.0-470-all-compat.patch" auto 1 _cond_closed_470_k70 "whitelist locale: 470 + kernel >= 7.0"
   _patch_rule_add "kernel-7.1.patch" auto 2 _cond_open_595_k71 "whitelist open: 595 <= 595.58.03 + kernel >= 7.1"
-  _patch_rule_add "gcc-14-470.diff" auto 1 _cond_gcc14_470 "whitelist closed: 470 + GCC 14"
   _patch_rule_add "gcc-14.diff" auto 1 _cond_gcc14_non470 "whitelist closed: non-470 + GCC 14"
   _patch_rule_add "gcc-15.diff" auto 1 _cond_gcc15 "whitelist: GCC 15"
   _patch_rule_add "GFP_RETRY_MAYFAIL-test.diff" "" "" _cond_never "whitelist absente dans PKGBUILD.txt pour GFP_RETRY_MAYFAIL-test.diff"
@@ -301,7 +302,7 @@ _patch_plan() {
   fi
 
   case $p in
-    99-local-kernel-compat-390.patch)
+    390-kernel-7.0.patch)
       [[ $major == 390 ]] && echo "apply|.|1|serie 390 locale" || \
         echo "skip|||whitelist: serie 390 uniquement"
       return ;;
@@ -456,12 +457,6 @@ _patch_plan() {
         echo "skip|||whitelist open: 590 + kernel >= 6.19"
       return ;;
 
-    kernel-6.19-470.patch)
-      [[ $nvidia_open == "false" && $major == 470 ]] && _kernel_ge "$running_kernel" "6.19.0" && \
-        echo "apply|kernel-dkms|1|whitelist closed: 470 + kernel >= 6.19" || \
-        echo "skip|||whitelist closed: 470 + kernel >= 6.19"
-      return ;;
-
     kernel-7.0.patch)
       if [[ ${has_real_kernel_open:-false} == "true" && $nvidia_open == "true" && ( $major == 590 || $major == 595 ) && "$pkgver" != "595.44.06" && "$pkgver" != "595.44.07" ]] && _kernel_ge "$running_kernel" "7.0.0" && _ver_le "$pkgver" "595.58.03"; then
         echo "apply|auto|2|whitelist open: 590/595 <= 595.58.03 + kernel >= 7.0"
@@ -480,30 +475,12 @@ _patch_plan() {
       fi
       return ;;
 
-    kernel-7.0-470.patch)
-      [[ $nvidia_open == "false" && $major == 470 ]] && _kernel_ge "$running_kernel" "7.0.0" && \
-        echo "apply|kernel-dkms|1|whitelist closed: 470 + kernel >= 7.0" || \
-        echo "skip|||whitelist closed: 470 + kernel >= 7.0"
-      return ;;
-
-    kernel-7.0-470-all-compat.patch)
-      [[ $nvidia_open == "false" && $major == 470 ]] && _kernel_ge "$running_kernel" "7.0.0" && \
-        echo "apply|auto|1|whitelist locale: 470 + kernel >= 7.0" || \
-        echo "skip|||whitelist locale: 470 + kernel >= 7.0"
-      return ;;
-
     kernel-7.1.patch)
       if [[ ${has_real_kernel_open:-false} == "true" && $nvidia_open == "true" && $major == 595 && "$pkgver" != "595.44.06" && "$pkgver" != "595.44.07" ]] && _kernel_ge "$running_kernel" "7.1.0" && _ver_le "$pkgver" "595.58.03"; then
         echo "apply|auto|2|whitelist open: 595 <= 595.58.03 + kernel >= 7.1"
       else
         echo "skip|||whitelist open: 595 <= 595.58.03 + kernel >= 7.1"
       fi
-      return ;;
-
-    gcc-14-470.diff)
-      [[ $nvidia_open == "false" && $major == 470 && $(_gcc_major) == 14 ]] && \
-        echo "apply|auto|1|whitelist closed: 470 + GCC 14" || \
-        echo "skip|||whitelist closed: 470 + GCC 14"
       return ;;
 
     gcc-14.diff)
@@ -680,13 +657,13 @@ prepare() {
 
   local -a patch_candidates
   mapfile -t patch_candidates < <(_collect_patch_candidates)
-  echo "Patches detectes (${#patch_candidates[@]}) dans ${srcdir}:"
-  printf '  - %s\n' "${patch_candidates[@]}"
 
   applied_patches=()
   failed_patches=()
   skipped_patches=()
   already_patches=()
+
+  echo "Patches detectes: ${#patch_candidates[@]}"
 
   _apply_one_patch() {
     local patch_file=$1 patch_name=$2 target_dir=$3 p_level=$4
@@ -922,12 +899,6 @@ build() {
     done
   fi
   echo " Patches ignorés (règles): ${#skipped_patches[@]}"
-  if [[ ${#skipped_patches[@]} -gt 0 ]]; then
-    echo " Liste des patches ignorés :"
-    for p in "${skipped_patches[@]}"; do
-      echo "   - $p"
-    done
-  fi
   echo " Patches deja appliqués : ${#already_patches[@]}"
   if [[ ${#already_patches[@]} -gt 0 ]]; then
     echo " Liste des patches deja appliqués :"
@@ -962,8 +933,8 @@ build() {
   sed -i "s/PACKAGE_NAME=\"nvidia\"/PACKAGE_NAME=\"${_dkmsname}\"/g" "$dkms_conf"
   
   # Remplacement complet de la ligne MAKE[0] pour éviter les problèmes de placeholders.
-  # On garde IGNORE_CC_MISMATCH=1 et le parallélisme, sans forcer LLVM=1.
-  sed -i "s|^MAKE\[0\].*|MAKE[0]=\"env IGNORE_CC_MISMATCH=1 'make' -j$(nproc) NV_EXCLUDE_BUILD_MODULES='' KERNEL_UNAME=\${kernelver} modules\"|" "$dkms_conf"
+  # Kernel compilé avec clang => build module en clang/lld, sinon build classique.
+  sed -i "s|^MAKE\[0\].*|MAKE[0]=\"env IGNORE_CC_MISMATCH=1 bash -c 'if grep -qi clang \\\"/lib/modules/\\\${kernelver}/build/include/generated/compile.h\\\" 2>/dev/null; then exec make -j$(nproc) LLVM=1 CC=clang LD=ld.lld NV_EXCLUDE_BUILD_MODULES=\\\"\\\" KERNEL_UNAME=\\\${kernelver} modules; else exec make -j$(nproc) NV_EXCLUDE_BUILD_MODULES=\\\"\\\" KERNEL_UNAME=\\\${kernelver} modules; fi'\"|" "$dkms_conf"
   
   # Insertion des modules (remplace la ligne __DKMS_MODULES)
   echo "$dkms_modules" > "${srcdir}/dkms_modules.txt"

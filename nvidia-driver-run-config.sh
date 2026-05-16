@@ -2,9 +2,11 @@
 set -euo pipefail
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-pacscript="${script_dir}/nvidia-driver-run.pacscript"
+pacscript_dir="${script_dir}/pacscript"
+pacscript="${pacscript_dir}/nvidia-driver-run.pacscript"
 generated_pacscript=''
 download_tmp_file=''
+mkdir -p "$pacscript_dir"
 
 if [[ -t 1 && -z ${NO_COLOR:-} ]]; then
   bold=$'\033[1m'
@@ -438,7 +440,7 @@ collect_valid_runfiles() {
   local -a candidates
   VALID_RUNFILES=()
   INVALID_RUNFILES=()
-  mapfile -t candidates < <(find "$script_dir" -maxdepth 1 -type f -name 'NVIDIA-Linux-x86_64-*.run' | sort)
+  mapfile -t candidates < <(find "$pacscript_dir" -maxdepth 1 -type f -name 'NVIDIA-Linux-x86_64-*.run' 2>/dev/null | sort -u)
   for file in "${candidates[@]}"; do
     if runfile_is_valid "$file"; then
       VALID_RUNFILES+=("$file")
@@ -724,7 +726,7 @@ pick_online_runfile() {
 
   title "Telechargement"
   info "$run_url"
-  download_tmp_file="${script_dir}/${run_name}.part"
+  download_tmp_file="${pacscript_dir}/${run_name}.part"
   rm -f -- "$download_tmp_file"
   curl -fL --progress-bar -o "$download_tmp_file" "$run_url"
   if ! runfile_is_valid "$download_tmp_file"; then
@@ -732,13 +734,13 @@ pick_online_runfile() {
     error "Le fichier telecharge est incomplet ou invalide: ${run_name}"
     return 1
   fi
-  mv -f -- "$download_tmp_file" "${script_dir}/${run_name}"
+  mv -f -- "$download_tmp_file" "${pacscript_dir}/${run_name}"
   download_tmp_file=''
-  PICKED_RUNFILE="${script_dir}/${run_name}"
+  PICKED_RUNFILE="${pacscript_dir}/${run_name}"
   ui_header >/dev/tty
   title "Telechargement termine" >/dev/tty
   info "Fichier pret: ${run_name}" >/dev/tty
-  info "Chemin: ${script_dir}/${run_name}" >/dev/tty
+  info "Chemin: ${pacscript_dir}/${run_name}" >/dev/tty
   spacer >/dev/tty
   read -r -p "Appuie sur Entrer pour continuer... " _ </dev/tty
   return 0
@@ -827,7 +829,7 @@ fi
 
 pkgver=${runfile#NVIDIA-Linux-x86_64-}
 pkgver=${pkgver%.run}
-generated_pacscript="${script_dir}/nvidia-driver-run-${pkgver}.pacscript"
+generated_pacscript="${pacscript_dir}/nvidia-driver-run-${pkgver}.pacscript"
 
 if ver_ge "$pkgver" "515"; then
   title "Module noyau"
@@ -864,11 +866,11 @@ no yes "2" \
   esac
 fi
 
-available_kib=$(df -Pk "$script_dir" | awk 'NR==2 {print $4}')
+available_kib=$(df -Pk "$pacscript_dir" | awk 'NR==2 {print $4}')
 available_gib=$((available_kib / 1024 / 1024))
 if ((available_gib < 3)); then
   echo
-  warn "Espace libre faible dans ${script_dir}: environ ${available_gib} Gio."
+  warn "Espace libre faible dans ${pacscript_dir}: environ ${available_gib} Gio."
   echo "La construction NVIDIA peut demander plusieurs Gio selon la version."
 fi
 
@@ -897,7 +899,7 @@ pacstall "${pacstall_args[@]}" "$generated_pacscript"
 if [[ $downloaded_by_script == true ]]; then
   echo
   title "Nettoyage du runfile telecharge"
-  if yes_no "Conserver ${runfile} dans ${script_dir} ?" no; then
+  if yes_no "Conserver ${runfile} dans ${pacscript_dir} ?" no; then
     info "Runfile conserve: ${runfile}"
   else
     rm -f -- "$downloaded_runfile"

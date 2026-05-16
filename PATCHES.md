@@ -1,12 +1,37 @@
 # Patch inventory
 
 This file is a maintenance note only. Pacstall expects the patch files listed in
-`source=()` to stay next to the pacscript, so the files are not moved into
-subdirectories.
+`source=()` to stay next to the pacscript.
+
+## Current project state (update)
+
+- The active pacscript is now `pacscript/nvidia-driver-run.pacscript`.
+- Patch files are stored in `pacscript/`.
+- For the proprietary 470 branch, the current active approach is a cumulative
+  patch: `470-kernel-7.0.patch`.
+- This document still keeps the broader historical inventory below on purpose.
+
+## Naming convention (cumulative patches)
+
+Going forward, cumulative patch naming follows:
+
+- `<nvidia-main-branch>-kernel-<max-kernel-supported>.patch`
+
+Examples:
+
+- `390-kernel-7.0.patch`
+- `470-kernel-7.0.patch`
+
+Policy:
+
+- patches are cumulative (large unified patches),
+- each patch targets one NVIDIA main branch,
+- file name indicates the maximum tested/supported kernel family,
+- patches are expected to support both GCC and Clang toolchains.
 
 ## Active with the local test set
 
-- `99-local-kernel-compat-390.patch`
+- `390-kernel-7.0.patch`
   - Target: NVIDIA 390.157 proprietary/legacy `kernel/` tree.
   - Current role: local compatibility patch for Debian 13 and newer/custom
     kernels.
@@ -51,50 +76,22 @@ with a current NVIDIA driver.
 
 ## Legacy 470 and older-driver support
 
-Keep these if the pacscript may later support 470/older proprietary drivers.
-They are not needed for the current local 390 + 580 test set unless a matching
-driver version is added.
+Current status for 470 proprietary support:
 
-- `kernel-6.0-470.patch`
-- `kernel-6.19-470.patch`
-- `kernel-7.0-470.patch`
-- `legacy-kernel-6.4.diff`
-- `legacy-kernel-6.5.diff`
-- `legacy-kernel-6.6.diff`
-- `gcc-14-470.diff`
+- Active patch: `470-kernel-7.0.patch`
+  - Role: cumulative compatibility patch for the 470 branch.
+  - Intended coverage: kernels from 6.12 up to 7.0, including GCC and
+    clang/lld builds.
+  - Note: this patch replaces the previously split 470 patch series and
+    compatibility fragments.
 
 ## Old kernel compatibility baggage
 
-These mostly come from the older `nvidia-all` compatibility pile for Linux 4.x
-and 5.x transitions. They are likely obsolete for Debian 13 unless a very old
-driver is tested against a very specific old or custom kernel.
+Most Linux 4.x/5.x legacy compatibility patches from the old `nvidia-all`
+stack were removed from this repository.
 
-- `kernel-4.16.patch`
-- `kernel-4.19.patch`
-- `kernel-5.0.patch`
-- `kernel-5.1.patch`
-- `kernel-5.2.patch`
-- `kernel-5.3.patch`
-- `kernel-5.4.patch`
-- `kernel-5.4-prime.diff`
-- `kernel-5.4-symver.diff`
-- `kernel-5.5.patch`
-- `kernel-5.6.patch`
-- `kernel-5.7.patch`
-- `kernel-5.8.patch`
-- `kernel-5.9.patch`
-- `kernel-5.10.patch`
-- `kernel-5.11.patch`
-- `kernel-5.12.patch`
-- `kernel-5.14.patch`
-- `kernel-5.16.patch`
-- `kernel-5.16-std.diff`
-- `kernel-5.17.patch`
-- `5.6-ioremap.diff`
-- `5.6-legacy-includes.diff`
-- `5.8-legacy.diff`
-- `5.9-gpl.diff`
-- `5.11-legacy.diff`
+- Current status: no dedicated 4.x/5.x compatibility patch files are kept in
+  the active patch set.
 
 ## Miscellaneous or version-specific
 

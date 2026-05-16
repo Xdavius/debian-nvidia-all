@@ -1,0 +1,9 @@
+diff --git a/Kbuild b/Kbuild
+--- a/Kbuild
++++ b/Kbuild
+@@ -137,6 +137,7 @@ ifeq ($(ARCH),x86_64)
+  ccflags-y += -mno-red-zone -mcmodel=kernel
++ ccflags-y += $(call cc-option,-mharden-sls=all,)
+ endif
+ 
+ ccflags-y += -DNV_UVM_ENABLE
