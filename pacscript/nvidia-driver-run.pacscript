@@ -277,9 +277,16 @@ _patch_rules_init() {
 }
 
 _patch_plan_from_rules() {
-  local p=$1 cond
+  local p=$1 cond major
   _patch_rules_init
   [[ -v _patch_cond["$p"] ]] || return 1
+
+  major=$(_ver_major)
+  # Règle cumulative: pour la branche 390, on n'utilise que le patch dédié.
+  if [[ $major == 390 && $p != "390-kernel-7.0.patch" ]]; then
+    echo "skip|||branche 390: patch cumulatif unique 390-kernel-7.0.patch"
+    return 0
+  fi
 
   cond=${_patch_cond["$p"]}
   if "$cond"; then
@@ -669,6 +676,24 @@ prepare() {
     local patch_file=$1 patch_name=$2 target_dir=$3 p_level=$4
     local oldpwd_apply=$PWD
     cd "$target_dir" || return 1
+    # Le patch cumulatif 390 contient plusieurs passages sur certains fichiers.
+    # Avec --dry-run, patch peut produire un faux negatif; on teste d'abord le
+    # cas "deja applique", puis on applique directement.
+    if [[ $patch_name == "390-kernel-7.0.patch" ]]; then
+      if patch --batch -p"$p_level" -R -F 3 --dry-run < "$patch_file" >> "${srcdir}/debug.txt" 2>&1; then
+        already_patches+=("$patch_name")
+        printf "  [DONE ] %-45s deja applique (%s)\n" "$patch_name" "$target_dir"
+      elif patch --batch -p"$p_level" -N -F 3 < "$patch_file" >> "${srcdir}/debug.txt" 2>&1; then
+        applied_patches+=("$patch_name")
+        printf "  [APPLY] %-45s %s\n" "$patch_name" "$target_dir"
+      else
+        failed_patches+=("$patch_name")
+        printf "  [MISS ] %-45s incompatible\n" "$patch_name"
+      fi
+      cd "$oldpwd_apply" || return 1
+      return 0
+    fi
+
     if patch --batch -p"$p_level" -N -F 3 --dry-run < "$patch_file" >> "${srcdir}/debug.txt" 2>&1; then
       if patch --batch -p"$p_level" -N -F 3 < "$patch_file" >> "${srcdir}/debug.txt" 2>&1; then
         applied_patches+=("$patch_name")
