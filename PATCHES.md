@@ -90,18 +90,32 @@ ordered context and checklist.
   - Current role: KDE hardware cursor fix.
   - Tested locally: applies to `NVIDIA-Linux-x86_64-580.159.03.run`.
 
-## Open-module candidates
+- `580-kernel-7.0.patch`
+  - Target: NVIDIA 580 open-module branch.
+  - Current role: cumulative compatibility patch for branch 580
+    (atomic KMS default, IBT/SLS, KDE cursor behavior).
+  - Note: this replaces the previous `kernel-7.0-580.patch` naming.
 
-These are kept because they target recent open-module layouts, but they did not
-apply to the local 580.159.03 runfile during the last test. They may already be
-upstreamed, version-specific, or intended for a slightly different source tree.
+## Current patch files in `pacscript/`
 
+After the recent cleanup, these are the patch files currently kept in the
+repository:
+
+- `0001-Enable-atomic-kernel-modesetting-by-default.diff`
 - `0002-Add-IBT-support.diff`
-- `Add-IBT-support.diff`
-- `nvidia-open-gcc-ibt-sls.diff`
+- `390-kernel-7.0.patch`
+- `470-kernel-7.0.patch`
+- `580-kernel-7.0.patch`
 - `fix-hdmi-names.diff`
-- `silence-event-assert-until-570.diff`
-- `kernel-7.0-580.patch`
+- `fix-hw-cursor-kde.diff`
+- `gcc-15.diff`
+- `kernel-6.12.patch`
+- `kernel-6.17.patch`
+- `kernel-6.19.patch`
+- `kernel-7.0.patch`
+- `kernel-7.1.patch`
+- `make-modeset-fbdev-default.diff`
+- `nvidia-bsb-dsc-fix.diff`
 
 ## Modern or future kernel compatibility
 
@@ -137,20 +151,5 @@ stack were removed from this repository.
 
 ## Miscellaneous or version-specific
 
-These need a matching driver/version test before deciding whether they are still
-useful.
-
-- `01-ipmi-vm.diff`
-- `02-ipmi-vm.diff`
-- `455-crashfix.diff`
-- `6.1-6-7-8-gpl.diff`
-- `6.11-fbdev.diff`
-- `Enable-atomic-kernel-modesetting-by-default.diff`
-- `GFP_RETRY_MAYFAIL-test.diff`
-- `gcc-14.diff`
-- `linux-version.diff`
-- `list_is_first.diff`
-- `make-modeset-fbdev-default.diff`
-- `make-modeset-fbdev-default-565.diff`
-- `nvidia-bsb-dsc-fix.diff`
-- `nvidia-settings-libxnvctrl_so.diff`
+Following the cleanup, legacy split fragments previously listed here were
+removed from the active tree.
