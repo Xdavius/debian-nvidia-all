@@ -1,48 +1,5 @@
 import { VerticalBox, HorizontalBox } from "std-widgets.slint";
 
-component WindowActionButton inherits Rectangle {
-    in property <string> label: "";
-    in property <bool> enabled: true;
-    in property <bool> danger: false;
-    in property <length> label-offset-y: 0px;
-    callback clicked();
-
-    width: 30px;
-    height: 24px;
-    border-radius: 7px;
-    border-width: 1px;
-    border-color: !root.enabled
-        ? #4a4e57
-        : (touch.has-hover ? (root.danger ? #f08aa4 : #78a6f2) : #41506e);
-    background: !root.enabled
-        ? #2b3039
-        : (touch.pressed
-            ? (root.danger ? @linear-gradient(180deg, #a02a4a 0%, #7f1e3a 100%) : @linear-gradient(180deg, #29364a 0%, #202a3a 100%))
-            : (touch.has-hover
-                ? (root.danger ? @linear-gradient(180deg, #d63d68 0%, #a52e52 100%) : @linear-gradient(180deg, #2a3750 0%, #222d41 100%))
-                : @linear-gradient(180deg, #1f2938 0%, #1a2130 100%)));
-
-    Text {
-        x: 0px;
-        y: root.label-offset-y;
-        width: parent.width;
-        height: parent.height - root.label-offset-y;
-        text: root.label;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        color: root.enabled ? #eaf1ff : #aeb7c7;
-        font-size: 13px;
-        font-weight: 700;
-    }
-
-    touch := TouchArea {
-        width: parent.width;
-        height: parent.height;
-        enabled: root.enabled;
-        clicked => { root.clicked(); }
-    }
-}
-
 component NvButton inherits Rectangle {
     in property <string> text: "";
     in property <bool> enabled: true;
@@ -250,17 +207,10 @@ export component AppWindow inherits Window {
     in-out property <string> status: "Pret";
     in-out property <string> logs: "";
     in-out property <bool> running: false;
-    in-out property <bool> window-maximized: false;
-    in-out property <bool> use-custom-frame: true;
 
     callback run();
     callback copy_logs();
     callback close_transients();
-    callback window_minimize();
-    callback window_toggle_maximize();
-    callback window_close();
-    callback window_drag_start();
-    callback window_drag(float, float);
 
     min-width: 760px;
     min-height: 520px;
@@ -269,8 +219,6 @@ export component AppWindow inherits Window {
     preferred-width: 980px;
     preferred-height: 700px;
     title: "Debian NVIDIA Driver GUI";
-    no-frame: root.use-custom-frame;
-    resize-border-width: 6px;
     background: #161a22;
 
     Rectangle {
@@ -286,81 +234,6 @@ export component AppWindow inherits Window {
         VerticalBox {
             padding: 16px;
             spacing: 10px;
-
-            Rectangle {
-                height: root.use-custom-frame ? 34px : 0px;
-                border-radius: 10px;
-                border-width: 1px;
-                border-color: #34405a;
-                background: @linear-gradient(180deg, #202b3d 0%, #1a2433 100%);
-                clip: true;
-
-                Text {
-                    x: 12px;
-                    y: 8px;
-                    text: "Debian NVIDIA Driver GUI";
-                    color: #dce7ff;
-                    font-size: 14px;
-                    font-weight: 700;
-                    visible: root.use-custom-frame;
-                }
-
-                drag_zone := TouchArea {
-                    x: 0px;
-                    y: 0px;
-                    width: parent.width - 110px;
-                    height: parent.height;
-                    enabled: root.use-custom-frame;
-                    double-clicked => { root.window_toggle_maximize(); }
-                    pointer-event(event) => {
-                        if (event.kind == PointerEventKind.down) {
-                            root.window_drag_start();
-                        }
-                    }
-                    moved => {
-                        if (self.pressed) {
-                            root.window_drag(
-                                (self.mouse-x - self.pressed-x) / 1px,
-                                (self.mouse-y - self.pressed-y) / 1px
-                            );
-                        }
-                    }
-                }
-
-                buttons_row := Rectangle {
-                    x: parent.width - 108px;
-                    y: (parent.height - 24px) / 2;
-                    width: 102px;
-                    height: 24px;
-                    background: #00000000;
-                    visible: root.use-custom-frame;
-
-                    WindowActionButton {
-                        x: 0px;
-                        y: 0px;
-                        label: "_";
-                        label-offset-y: -1px;
-                        clicked => { root.window_minimize(); }
-                    }
-
-                    WindowActionButton {
-                        x: 36px;
-                        y: 0px;
-                        label: root.window-maximized ? "❐" : "□";
-                        label-offset-y: 0px;
-                        clicked => { root.window_toggle_maximize(); }
-                    }
-
-                    WindowActionButton {
-                        x: 72px;
-                        y: 0px;
-                        label: "x";
-                        danger: true;
-                        label-offset-y: 0px;
-                        clicked => { root.window_close(); }
-                    }
-                }
-            }
 
             Rectangle {
                 height: 64px;

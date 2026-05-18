@@ -1,11 +1,10 @@
 slint::include_modules!();
 
 use slint::Model;
+use std::rc::Rc;
 use std::io::{Read, Write};
-use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -107,163 +106,19 @@ fn resolve_helper_path() -> Result<PathBuf, String> {
     Err("Helper introuvable. Definis NVIDIA_GUI_HELPER ou place debian-nvidia-all-cli.sh a cote du binaire.".to_string())
 }
 
-fn env_truthy(name: &str) -> bool {
-    matches!(
-        std::env::var(name)
-            .ok()
-            .map(|v| v.trim().to_ascii_lowercase())
-            .as_deref(),
-        Some("1" | "true" | "yes" | "on")
-    )
-}
-
-fn libxkbcommon_x11_available() -> bool {
-    let candidates = [
-        "/usr/lib/x86_64-linux-gnu/libxkbcommon-x11.so",
-        "/usr/lib/x86_64-linux-gnu/libxkbcommon-x11.so.0",
-        "/usr/lib64/libxkbcommon-x11.so",
-        "/usr/lib64/libxkbcommon-x11.so.0",
-        "/usr/lib/libxkbcommon-x11.so",
-        "/usr/lib/libxkbcommon-x11.so.0",
-    ];
-
-    if candidates.iter().any(|p| Path::new(p).exists()) {
-        return true;
-    }
-
-    if let Ok(output) = Command::new("ldconfig").arg("-p").output() {
-        let text = String::from_utf8_lossy(&output.stdout);
-        return text.contains("libxkbcommon-x11.so");
-    }
-
-    false
-}
-
 fn main() {
     if std::env::var("SLINT_BACKEND").is_err() {
         // Prefer FemtoVG to avoid software-renderer minimize/restore stalls on some systems.
         std::env::set_var("SLINT_BACKEND", "winit-femtovg");
     }
-    let has_wayland = std::env::var("WAYLAND_DISPLAY").ok().filter(|v| !v.is_empty()).is_some()
-        || std::env::var("WAYLAND_SOCKET").ok().filter(|v| !v.is_empty()).is_some();
-    let has_x11 = std::env::var("DISPLAY").ok().filter(|v| !v.is_empty()).is_some();
-    let wants_xwayland = env_truthy("NVIDIA_GUI_XWAYLAND");
-
-    let create_default_ui = || -> AppWindow {
-        match AppWindow::new() {
-            Ok(ui) => ui,
-            Err(e1) => {
-                // Graceful fallback if OpenGL/FemtoVG is not available on the host.
-                std::env::set_var("SLINT_BACKEND", "winit-software");
-                AppWindow::new().unwrap_or_else(|e2| {
-                    panic!("Cannot create UI (femtovg: {}; software: {})", e1, e2)
-                })
-            }
+    let ui = match AppWindow::new() {
+        Ok(ui) => ui,
+        Err(_) => {
+            // Graceful fallback if OpenGL/FemtoVG is not available on the host.
+            std::env::set_var("SLINT_BACKEND", "winit-software");
+            AppWindow::new().expect("Cannot create UI")
         }
     };
-
-    let ui = if wants_xwayland && has_wayland {
-        if !has_x11 {
-            eprintln!(
-                "[gui] NVIDIA_GUI_XWAYLAND=1 ignore: DISPLAY absent, fallback Wayland natif."
-            );
-            create_default_ui()
-        } else if !libxkbcommon_x11_available() {
-            eprintln!("[gui] NVIDIA_GUI_XWAYLAND=1 ignore: libxkbcommon-x11 absente, fallback Wayland natif.");
-            create_default_ui()
-        } else {
-            let old_wayland_display = std::env::var_os("WAYLAND_DISPLAY");
-            let old_wayland_socket = std::env::var_os("WAYLAND_SOCKET");
-            std::env::remove_var("WAYLAND_DISPLAY");
-            std::env::remove_var("WAYLAND_SOCKET");
-
-            let x11_attempt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(AppWindow::new));
-
-            match old_wayland_display {
-                Some(v) => std::env::set_var("WAYLAND_DISPLAY", v),
-                None => std::env::remove_var("WAYLAND_DISPLAY"),
-            }
-            match old_wayland_socket {
-                Some(v) => std::env::set_var("WAYLAND_SOCKET", v),
-                None => std::env::remove_var("WAYLAND_SOCKET"),
-            }
-
-            match x11_attempt {
-                Ok(Ok(ui)) => {
-                    eprintln!("[gui] XWayland mode actif (NVIDIA_GUI_XWAYLAND=1).");
-                    ui
-                }
-                Ok(Err(e)) => {
-                    eprintln!(
-                        "[gui] XWayland init echec: {}. Fallback Wayland natif.",
-                        e
-                    );
-                    create_default_ui()
-                }
-                Err(_) => {
-                    eprintln!("[gui] XWayland panic capturee. Fallback Wayland natif.");
-                    create_default_ui()
-                }
-            }
-        }
-    } else {
-        create_default_ui()
-    };
-    ui.set_window_maximized(false);
-    ui.set_use_custom_frame(has_wayland);
-
-    let drag_origin = Arc::new(Mutex::new((0i32, 0i32)));
-    {
-        let weak_drag_start = ui.as_weak();
-        let drag_origin_start = drag_origin.clone();
-        ui.on_window_drag_start(move || {
-            if let Some(ui) = weak_drag_start.upgrade() {
-                let p = ui.window().position();
-                if let Ok(mut origin) = drag_origin_start.lock() {
-                    *origin = (p.x, p.y);
-                }
-            }
-        });
-    }
-    {
-        let weak_drag = ui.as_weak();
-        let drag_origin_move = drag_origin.clone();
-        ui.on_window_drag(move |dx, dy| {
-            if let Some(ui) = weak_drag.upgrade() {
-                if let Ok(origin) = drag_origin_move.lock() {
-                    let nx = origin.0 + dx.round() as i32;
-                    let ny = origin.1 + dy.round() as i32;
-                    ui.window().set_position(slint::PhysicalPosition::new(nx, ny));
-                }
-            }
-        });
-    }
-    {
-        let weak_min = ui.as_weak();
-        ui.on_window_minimize(move || {
-            if let Some(ui) = weak_min.upgrade() {
-                ui.window().set_minimized(true);
-            }
-        });
-    }
-    {
-        let weak_max = ui.as_weak();
-        ui.on_window_toggle_maximize(move || {
-            if let Some(ui) = weak_max.upgrade() {
-                let next = !ui.window().is_maximized();
-                ui.window().set_maximized(next);
-                ui.set_window_maximized(next);
-            }
-        });
-    }
-    {
-        let weak_close = ui.as_weak();
-        ui.on_window_close(move || {
-            if let Some(ui) = weak_close.upgrade() {
-                let _ = ui.hide();
-            }
-        });
-    }
 
     let default_profiles: Vec<slint::SharedString> = vec![
         "Recommande".into(),
