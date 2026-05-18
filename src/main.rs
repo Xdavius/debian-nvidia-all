@@ -1,6 +1,7 @@
 slint::include_modules!();
 
 use slint::Model;
+use std::rc::Rc;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -88,19 +89,12 @@ fn resolve_helper_path() -> Result<PathBuf, String> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
     let candidates = [
-        // Helper a cote des sources Slint (nouveau layout)
-        manifest_dir.join("nvidia-driver-run-config-slint-helper.sh"),
-        // Helper a la racine du repo (ancien layout)
-        manifest_dir
-            .join("..")
-            .join("nvidia-driver-run-config-slint-helper.sh"),
-        // Proche du binaire
-        exe_dir.join("nvidia-driver-run-config-slint-helper.sh"),
-        exe_dir.join("../nvidia-driver-run-config-slint-helper.sh"),
-        exe_dir.join("../../nvidia-driver-run-config-slint-helper.sh"),
-        // Depuis le dossier courant d'execution
-        cwd.join("nvidia-driver-run-config-slint-helper.sh"),
-        cwd.join("slint-gui").join("nvidia-driver-run-config-slint-helper.sh"),
+        manifest_dir.join("debian-nvidia-all-cli.sh"),
+        manifest_dir.join("..").join("debian-nvidia-all-cli.sh"),
+        exe_dir.join("debian-nvidia-all-cli.sh"),
+        exe_dir.join("../debian-nvidia-all-cli.sh"),
+        exe_dir.join("../../debian-nvidia-all-cli.sh"),
+        cwd.join("debian-nvidia-all-cli.sh"),
     ];
 
     for c in candidates {
@@ -109,11 +103,77 @@ fn resolve_helper_path() -> Result<PathBuf, String> {
         }
     }
 
-    Err("Helper introuvable. Definis NVIDIA_GUI_HELPER ou place nvidia-driver-run-config-slint-helper.sh a cote du binaire.".to_string())
+    Err("Helper introuvable. Definis NVIDIA_GUI_HELPER ou place debian-nvidia-all-cli.sh a cote du binaire.".to_string())
 }
 
 fn main() {
     let ui = AppWindow::new().expect("Cannot create UI");
+
+    let loading_model = Rc::new(slint::VecModel::from(vec![
+        slint::SharedString::from("Chargement des versions..."),
+    ]));
+    ui.set_profile_model(loading_model.into());
+
+    let weak_init = ui.as_weak();
+    thread::spawn(move || {
+        let mut rec = String::new();
+        let mut lat = String::new();
+        let mut l580 = String::new();
+        let mut l470 = String::new();
+        let mut l390 = String::new();
+        let mut lat_support = String::new();
+
+        if let Ok(helper) = resolve_helper_path() {
+            if let Ok(output) = Command::new("bash").arg(&helper).arg("--print-versions").output() {
+                let text = String::from_utf8_lossy(&output.stdout);
+                for line in text.lines() {
+                    let mut parts = line.splitn(2, '=');
+                    if let (Some(k), Some(v)) = (parts.next(), parts.next()) {
+                        match k {
+                            "RECOMMENDED" => rec = v.to_string(),
+                            "LATEST" => lat = v.to_string(),
+                            "LEGACY580" => l580 = v.to_string(),
+                            "LEGACY470" => l470 = v.to_string(),
+                            "LEGACY390" => l390 = v.to_string(),
+                            "LATEST_SUPPORT" => lat_support = v.to_string(),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        
+        let mut profiles = Vec::new();
+        if !rec.is_empty() {
+            profiles.push(format!("Recommande ({})", rec).into());
+        } else {
+            profiles.push("Recommande".into());
+        }
+        
+        if !lat.is_empty() {
+            let supp = if !lat_support.is_empty() { format!(" - {}", lat_support) } else { "".to_string() };
+            profiles.push(format!("Latest ({}){}", lat, supp).into());
+        } else {
+            profiles.push("Latest".into());
+        }
+        
+        if !l580.is_empty() { profiles.push(format!("Legacy 580xx ({})", l580).into()); }
+        if !l470.is_empty() { profiles.push(format!("Legacy 470xx ({})", l470).into()); }
+        if !l390.is_empty() { profiles.push(format!("Legacy 390xx ({})", l390).into()); }
+        
+        if profiles.is_empty() {
+            profiles.push("Erreur de chargement".into());
+        }
+
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(ui) = weak_init.upgrade() {
+                let new_model = Rc::new(slint::VecModel::from(profiles));
+                ui.set_profile_model(new_model.into());
+                ui.set_profile_index(0);
+            }
+        });
+    });
+
 
     let weak_copy = ui.as_weak();
     ui.on_copy_logs(move || {
@@ -148,16 +208,16 @@ fn main() {
         let pidx = ui.get_profile_index() as usize;
         let oidx = ui.get_open_index() as usize;
 
-        let profile = profile_model
+        let profile_text = profile_model
             .row_data(pidx)
-            .unwrap_or_else(|| "recommended".into())
+            .unwrap_or_default()
             .to_string();
         let open_mode = open_model
             .row_data(oidx)
             .unwrap_or_else(|| "auto".into())
             .to_string();
 
-        ui.set_status(format!("Execution en cours: profile={}, module={}...", profile, open_mode).into());
+        ui.set_status(format!("Execution en cours: profile={}, module={}...", profile_text, open_mode).into());
         ui.set_logs("".into());
         ui.set_running(true);
 
@@ -179,12 +239,29 @@ fn main() {
             };
 
             let helper_path = helper.to_string_lossy().replace('\'', "'\\''");
-            let profile_esc = profile.replace('\'', "'\\''");
-            let open_mode_esc = open_mode.replace('\'', "'\\''");
-            let cmdline = format!(
-                "bash '{}' '{}' '{}'",
-                helper_path, profile_esc, open_mode_esc
+            
+            let mut ver_arg = "--branch recommended".to_string();
+            if pidx == 0 { ver_arg = "--branch recommended".to_string(); }
+            else if pidx == 1 { ver_arg = "--branch latest".to_string(); }
+            else {
+                if let Some(start) = profile_text.find('(') {
+                    if let Some(end) = profile_text.find(')') {
+                        let ver = &profile_text[start+1..end];
+                        ver_arg = format!("--version {}", ver);
+                    }
+                }
+            }
+            
+            let mut cmdline = format!(
+                "bash '{}' --source online {}",
+                helper_path, ver_arg
             );
+            
+            if open_mode == "true" || open_mode == "false" {
+                cmdline.push_str(&format!(" --nvidia-open {}", open_mode));
+            }
+            
+            cmdline.push_str(" --action 1");
 
             let mut child = match Command::new("script")
                 .arg("-qefc")
