@@ -107,62 +107,96 @@ fn resolve_helper_path() -> Result<PathBuf, String> {
 }
 
 fn main() {
-    let ui = AppWindow::new().expect("Cannot create UI");
+    if std::env::var("SLINT_BACKEND").is_err() {
+        // Prefer FemtoVG to avoid software-renderer minimize/restore stalls on some systems.
+        std::env::set_var("SLINT_BACKEND", "winit-femtovg");
+    }
+    let ui = match AppWindow::new() {
+        Ok(ui) => ui,
+        Err(_) => {
+            // Graceful fallback if OpenGL/FemtoVG is not available on the host.
+            std::env::set_var("SLINT_BACKEND", "winit-software");
+            AppWindow::new().expect("Cannot create UI")
+        }
+    };
 
-    let mut rec = String::new();
-    let mut lat = String::new();
-    let mut l580 = String::new();
-    let mut l470 = String::new();
-    let mut l390 = String::new();
-    let mut lat_support = String::new();
+    let default_profiles: Vec<slint::SharedString> = vec![
+        "Recommande".into(),
+        "Latest".into(),
+        "Legacy 580xx".into(),
+        "Legacy 470xx".into(),
+        "Legacy 390xx".into(),
+    ];
+    let model = Rc::new(slint::VecModel::from(default_profiles));
+    ui.set_profile_model(model.into());
+    ui.set_profile_index(0);
 
-    if let Ok(helper) = resolve_helper_path() {
-        if let Ok(output) = Command::new("timeout")
-            .arg("15s")
-            .arg("bash")
-            .arg(&helper)
-            .arg("--print-versions")
-            .output()
-        {
-            let text = String::from_utf8_lossy(&output.stdout);
-            for line in text.lines() {
-                let mut parts = line.splitn(2, '=');
-                if let (Some(k), Some(v)) = (parts.next(), parts.next()) {
-                    match k {
-                        "RECOMMENDED" => rec = v.to_string(),
-                        "LATEST" => lat = v.to_string(),
-                        "LEGACY580" => l580 = v.to_string(),
-                        "LEGACY470" => l470 = v.to_string(),
-                        "LEGACY390" => l390 = v.to_string(),
-                        "LATEST_SUPPORT" => lat_support = v.to_string(),
-                        _ => {}
+    let weak_init = ui.as_weak();
+    thread::spawn(move || {
+        let mut rec = String::new();
+        let mut lat = String::new();
+        let mut l580 = String::new();
+        let mut l470 = String::new();
+        let mut l390 = String::new();
+        let mut lat_support = String::new();
+
+        if let Ok(helper) = resolve_helper_path() {
+            if let Ok(output) = Command::new("timeout")
+                .arg("15s")
+                .arg("bash")
+                .arg(&helper)
+                .arg("--print-versions")
+                .output()
+            {
+                let text = String::from_utf8_lossy(&output.stdout);
+                for line in text.lines() {
+                    let mut parts = line.splitn(2, '=');
+                    if let (Some(k), Some(v)) = (parts.next(), parts.next()) {
+                        match k {
+                            "RECOMMENDED" => rec = v.to_string(),
+                            "LATEST" => lat = v.to_string(),
+                            "LEGACY580" => l580 = v.to_string(),
+                            "LEGACY470" => l470 = v.to_string(),
+                            "LEGACY390" => l390 = v.to_string(),
+                            "LATEST_SUPPORT" => lat_support = v.to_string(),
+                            _ => {}
+                        }
                     }
                 }
             }
         }
-    }
 
-    let mut profiles: Vec<slint::SharedString> = Vec::new();
-    if !rec.is_empty() {
-        profiles.push(format!("Recommande ({})", rec).into());
-    } else {
-        profiles.push("Recommande".into());
-    }
+        let mut profiles: Vec<slint::SharedString> = Vec::new();
+        if !rec.is_empty() {
+            profiles.push(format!("Recommande ({})", rec).into());
+        } else {
+            profiles.push("Recommande".into());
+        }
 
-    if !lat.is_empty() {
-        let supp = if !lat_support.is_empty() { format!(" - {}", lat_support) } else { "".to_string() };
-        profiles.push(format!("Latest ({}){}", lat, supp).into());
-    } else {
-        profiles.push("Latest".into());
-    }
+        if !lat.is_empty() {
+            let supp = if !lat_support.is_empty() { format!(" - {}", lat_support) } else { "".to_string() };
+            profiles.push(format!("Latest ({}){}", lat, supp).into());
+        } else {
+            profiles.push("Latest".into());
+        }
 
-    if !l580.is_empty() { profiles.push(format!("Legacy 580xx ({})", l580).into()); }
-    if !l470.is_empty() { profiles.push(format!("Legacy 470xx ({})", l470).into()); }
-    if !l390.is_empty() { profiles.push(format!("Legacy 390xx ({})", l390).into()); }
+        if !l580.is_empty() { profiles.push(format!("Legacy 580xx ({})", l580).into()); } else { profiles.push("Legacy 580xx".into()); }
+        if !l470.is_empty() { profiles.push(format!("Legacy 470xx ({})", l470).into()); } else { profiles.push("Legacy 470xx".into()); }
+        if !l390.is_empty() { profiles.push(format!("Legacy 390xx ({})", l390).into()); } else { profiles.push("Legacy 390xx".into()); }
 
-    let model = Rc::new(slint::VecModel::from(profiles));
-    ui.set_profile_model(model.into());
-    ui.set_profile_index(0);
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(ui) = weak_init.upgrade() {
+                let old_idx = ui.get_profile_index().max(0) as usize;
+                let len = profiles.len();
+                ui.set_profile_model(Rc::new(slint::VecModel::from(profiles)).into());
+                if len > 0 {
+                    ui.set_profile_index(old_idx.min(len - 1) as i32);
+                } else {
+                    ui.set_profile_index(0);
+                }
+            }
+        });
+    });
 
 
     let weak_copy = ui.as_weak();
