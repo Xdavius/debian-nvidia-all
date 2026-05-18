@@ -1,5 +1,5 @@
 [package]
-name = "nvidia-driver-slint-gui"
+name = "debian-nvidia-all-gui"
 version = "0.1.0"
 edition = "2021"
 

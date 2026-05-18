@@ -1,29 +1,33 @@
 # Contexte de Développement de l'Interface Graphique (GUI Rust/Slint)
 
 ## Architecture Globale
-L'application "DEBIAN NVIDIA DRIVER ALL" possède une interface graphique développée en Rust utilisant le framework Slint (`ui/app.slint`). Cette interface agit comme un Frontend (façade) qui configure et lance l'exécution des tâches via le Backend CLI Bash existant (`debian-nvidia-all-cli.sh`).
+L'application "Debian NVIDIA Driver GUI" possède une interface graphique développée en Rust utilisant le framework Slint (`ui/app.slint`). Cette interface agit comme un Frontend (façade) qui configure et lance l'exécution des tâches via le Backend CLI Bash existant (`debian-nvidia-all-cli.sh`).
 
 ## Rôle des Fichiers
-1. **`ui/app.slint`** : Définit la vue de l'application (Titre, design cyberpunk/glassmorphism, listes déroulantes, boutons).
-2. **`src/main.rs`** : Contient la logique applicative (modèles de données, interactions, lancements de threads).
-3. **`debian-nvidia-all-cli.sh`** : Script bash autonome qui télécharge, vérifie, et installe le pilote NVIDIA avec pacstall.
+1. **`ui/app.slint`** : Définit la vue de l'application (Titre, design moderne "GTK/Gaming" avec des couleurs Debian/Nvidia, listes déroulantes, boutons, console intégrée).
+2. **`src/main.rs`** : Contient la logique applicative (modèles de données, récupération asynchrone des versions, lancements de l'installation).
+3. **`Cargo.toml`** : Configure la compilation du binaire pour générer l'exécutable `debian-nvidia-all-gui`.
+4. **`debian-nvidia-all-cli.sh`** : Script bash autonome qui détecte le matériel, télécharge, vérifie, et installe le pilote NVIDIA avec pacstall.
 
 ## Fonctionnement du Flux
 1. **Démarrage (Auto-Détection)** : 
    - Au lancement de la GUI, Rust lance un thread en arrière-plan qui appelle `bash debian-nvidia-all-cli.sh --print-versions`.
    - Pendant ce temps, le menu déroulant affiche "Chargement des versions...".
-   - Le script Bash retourne un flux texte brut avec les versions disponibles sur les serveurs NVIDIA (ex: `RECOMMENDED=550.78`, `LATEST=555.42`, `LEGACY580=...`).
-   - Le thread Rust parse ces données et met à jour dynamiquement le modèle Slint (`profile-model`), présentant les choix de manière lisible pour l'utilisateur (ex: "Recommandé (550.78)", "Latest (555.42) - Turing/Ampere/Ada...").
+   - Le script Bash retourne un flux texte brut avec les versions disponibles et l'auto-détection du GPU (ex: `RECOMMENDED=595.71.05`, `LATEST=595.71.05`, `DETECTED_GPU=RTX 4090`).
+   - Le thread Rust parse ces données et met à jour dynamiquement le modèle Slint (`profile-model`). Si aucun GPU Nvidia n'est détecté sur le système, la mention "(pas de GPU Nvidia detecte)" est ajoutée au profil Recommandé.
 
 2. **Sélection et Exécution** :
    - Quand l'utilisateur clique sur "Lancer l'installation", la logique Rust récupère le choix effectué.
    - Rust convertit ce choix en un argument pour le CLI (si c'est "Recommandé" -> `--branch recommended`, si c'est "Latest" -> `--branch latest`, si c'est "Legacy 580xx (580.40)" -> `--version 580.40`).
-   - Rust spawn un processus enfant (via la commande système `script` pour émuler un pseudo-terminal PTTY, garantissant que pacstall s'exécute correctement) qui appelle `debian-nvidia-all-cli.sh --source online --branch <choix> --nvidia-open <true|false|auto> --action 1`.
+   - Le paramètre "Module noyau" (Open/Propriétaire) n'est **plus géré par la GUI**. Il s'appuie désormais à 100% sur les règles natives du CLI :
+     - Si la version est `>= 515` (Latest, 580), le script Bash force automatiquement le mode "Open" (`kernel-open`).
+     - Si la version est `< 515` (470, 390), le script Bash force le mode propriétaire.
+   - Rust spawn un processus enfant (via `script` pour capturer la sortie pseudo-terminal PTTY) qui appelle `debian-nvidia-all-cli.sh --source online [--branch <choix> | --version <choix>] --action 1`.
 
 3. **Retours (Logs)** :
-   - Les `stdout` et `stderr` du script sont lus de manière asynchrone par des threads dédiés en Rust et envoyés vers la vue Slint (`ui.set_logs()`), avec un nettoyage des codes couleurs ANSI.
+   - Les `stdout` et `stderr` du script Bash sont lus de manière asynchrone par des threads dédiés en Rust et envoyés vers la vue Slint (`ui.set_logs()`), avec un nettoyage des codes couleurs ANSI.
 
 ## Règles de Maintenance
-- **Respect du Backend** : Il ne faut JAMAIS supprimer de fonctionnalités existantes dans `debian-nvidia-all-cli.sh` (pour ne pas casser le TUI `debian-nvidia-all-tui.sh` qui s'en sert aussi). S'il manque des données pour la GUI, il faut AJOUTER une nouvelle fonction (ex: `print_versions_cli` appelée via un nouveau flag `--print-versions`).
-- **Gestion asynchrone** : Les appels réseau (curl via le CLI) ou l'exécution du script d'installation doivent toujours se faire dans un thread (via `thread::spawn`) afin de ne pas bloquer le thread principal de rendu de Slint.
+- **Respect du Backend** : Il ne faut JAMAIS dupliquer la logique métier côté Rust si elle peut être gérée ou est déjà gérée par le script `debian-nvidia-all-cli.sh` (ex: la gestion du mode Open/Propriétaire).
+- **Gestion asynchrone** : Les appels réseau ou l'exécution du script d'installation doivent toujours se faire dans un thread (`thread::spawn`) afin de ne pas bloquer le thread principal de rendu de Slint.
 - **Séparation des responsabilités** : La GUI n'effectue aucune installation ou gestion de fichier système elle-même. Elle se contente d'orchestrer la commande shell et d'afficher les retours de la CLI.

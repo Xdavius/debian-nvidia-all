@@ -193,15 +193,21 @@ fn main() {
         }
 
         let profile_model = ui.get_profile_model();
+        let open_model = ui.get_open_model();
 
         let pidx = ui.get_profile_index() as usize;
+        let oidx = ui.get_open_index() as usize;
 
         let profile_text = profile_model
             .row_data(pidx)
             .unwrap_or_default()
             .to_string();
+        let open_mode = open_model
+            .row_data(oidx)
+            .unwrap_or_else(|| "auto".into())
+            .to_string();
 
-        ui.set_status(format!("Execution en cours: profile={}...", profile_text).into());
+        ui.set_status(format!("Execution en cours: profile={}, module={}...", profile_text, open_mode).into());
         ui.set_logs("".into());
         ui.set_running(true);
 
@@ -240,7 +246,11 @@ fn main() {
                 "bash '{}' --source online {}",
                 helper_path, ver_arg
             );
-
+            
+            if open_mode == "true" || open_mode == "false" {
+                cmdline.push_str(&format!(" --nvidia-open {}", open_mode));
+            }
+            
             cmdline.push_str(" --action 1");
 
             let mut child = match Command::new("script")
@@ -322,7 +332,7 @@ fn main() {
                 let running_tick = running_flag.clone();
                 joins.push(thread::spawn(move || {
                     while running_tick.load(Ordering::Relaxed) {
-                        thread::sleep(Duration::from_secs(10));
+                        thread::sleep(Duration::from_secs(2));
                         if running_tick.load(Ordering::Relaxed) {
                             append_and_refresh(&weak_tick, &logs_tick, "[info] pacstall en cours...");
                         }
@@ -345,7 +355,6 @@ fn main() {
                     }
                     match status {
                         Ok(exit) if exit.success() => ui.set_status("Termine avec succes".into()),
-                        Ok(exit) if exit.code() == Some(130) => ui.set_status("Annule par l'utilisateur".into()),
                         Ok(exit) => ui.set_status(format!("Echec (code {:?})", exit.code()).into()),
                         Err(e) => ui.set_status(format!("Echec attente process: {}", e).into()),
                     }

@@ -25,16 +25,16 @@ export component AppWindow inherits Window {
     max-height: 3000px;
     preferred-width: 980px;
     preferred-height: 700px;
-    title: "Debian NVIDIA Driver GUI";
-    background: #161a22;
+    title: "NVIDIA Driver Run // Gamer Mode";
+    background: #060913;
 
     Rectangle {
         x: 10px;
         y: 10px;
         width: parent.width - 20px;
         height: parent.height - 20px;
-        background: #1b212c;
-        border-color: #313949;
+        background: #0a0f1f;
+        border-color: #1ee6a8;
         border-width: 1px;
         border-radius: 14px;
 
@@ -42,35 +42,27 @@ export component AppWindow inherits Window {
             padding: 16px;
             spacing: 10px;
 
-            Rectangle {
-                height: 64px;
-                border-radius: 10px;
-                background: @linear-gradient(90deg, #d70751 0%, #b70a4e 40%, #76b900 100%);
-
-                Text {
-                    x: 14px;
-                    y: 16px;
-                    text: "Debian NVIDIA Driver GUI";
-                    color: #ffffff;
-                    font-size: 26px;
-                    font-weight: 800;
-                }
+            Text {
+                text: "DEBIAN NVIDIA DRIVER ALL";
+                color: #65f6ff;
+                font-size: 28px;
+                font-weight: 700;
             }
 
             Text {
-                text: "Look GTK, esprit gaming, moteur CLI natif";
-                color: #c6d0e1;
-                font-size: 14px;
+                text: "Build and install NVIDIA driver for Debian";
+                color: #9af6d2;
+                font-size: 13px;
             }
 
             Rectangle {
                 height: 1px;
-                background: #2c3444;
+                background: #19314d;
             }
 
             Rectangle {
-                background: #202734;
-                border-color: #34405a;
+                background: #0e162b;
+                border-color: #20406b;
                 border-width: 1px;
                 border-radius: 10px;
 
@@ -81,45 +73,54 @@ export component AppWindow inherits Window {
                     HorizontalBox {
                         spacing: 10px;
                         Text {
-                            text: "Choix de la version";
-                            color: #e8eefc;
-                            font-size: 16px;
-                            width: 210px;
+                            text: "Profil";
+                            color: #d8e6ff;
+                            width: 120px;
                         }
                         ComboBox {
                             model: root.profile-model;
                             current-index: root.profile-index;
                             selected => { root.profile-index = self.current-index; }
-                            enabled: !root.running;
+                        }
+                    }
+
+                    HorizontalBox {
+                        spacing: 10px;
+                        Text {
+                            text: "Module noyau";
+                            color: #d8e6ff;
+                            width: 120px;
+                        }
+                        ComboBox {
+                            model: root.open-model;
+                            current-index: root.open-index;
+                            selected => { root.open-index = self.current-index; }
                         }
                     }
                 }
             }
 
             Text {
-                text: "Pour Latest et 580, kernel-open est force automatiquement. Pour 470/390, mode proprietaire.";
-                color: #b5c0d6;
+                text: "Pour latest et pour 580, kernel-open est force automatiquement (proprietaire ignore).";
+                color: #95afdb;
                 wrap: word-wrap;
-                font-size: 13px;
+                font-size: 12px;
             }
 
             HorizontalBox {
                 spacing: 8px;
-
                 Button {
-                    text: root.running ? "Installation en cours..." : "Lancer l'installation";
+                    text: "DEPLOY";
                     enabled: !root.running;
                     clicked => { root.run(); }
                 }
-
                 Button {
-                    text: "Copier les logs";
+                    text: "EXPORT LOG";
                     clicked => { root.copy_logs(); }
                 }
-
                 Rectangle {
-                    background: #151d2d;
-                    border-color: #3e4b63;
+                    background: #0f2238;
+                    border-color: #2f7ec7;
                     border-width: 1px;
                     border-radius: 8px;
                     height: 32px;
@@ -130,7 +131,7 @@ export component AppWindow inherits Window {
                         y: 7px;
                         width: parent.width - 14px;
                         text: root.status;
-                        color: #dfe7f5;
+                        color: #d7ecff;
                         vertical-alignment: center;
                         wrap: word-wrap;
                     }
@@ -139,19 +140,19 @@ export component AppWindow inherits Window {
 
             Rectangle {
                 height: 1px;
-                background: #2c3444;
+                background: #19314d;
             }
 
             Text {
-                text: "Journal systeme";
-                color: #d6dfef;
+                text: "SYSTEM LOG STREAM";
+                color: #65f6ff;
                 font-size: 16px;
                 font-weight: 600;
             }
 
             Rectangle {
-                background: #0f131b;
-                border-color: #2d3648;
+                background: #03050a;
+                border-color: #1ee6a8;
                 border-width: 1px;
                 border-radius: 8px;
                 vertical-stretch: 1;
@@ -163,9 +164,8 @@ export component AppWindow inherits Window {
                     width: parent.width - 16px;
                     height: parent.height - 16px;
                     text: root.logs;
-                    color: #d5dceb;
+                    color: #d8ffe6;
                     wrap: word-wrap;
-                    vertical-alignment: bottom;
                     font-size: 12px;
                 }
             }

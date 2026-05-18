@@ -33,6 +33,9 @@ command_exists() { command -v "$1" >/dev/null 2>&1; }
 cleanup() {
   [[ -n ${download_tmp_file:-} ]] && rm -f -- "$download_tmp_file"
   [[ -n ${generated_pacscript:-} ]] && rm -f -- "$generated_pacscript"
+  if [[ ${downloaded_by_script:-false} == true && ${OPT_KEEP_RUNFILE:-false} == false && -n ${downloaded_runfile:-} ]]; then
+    rm -f -- "$downloaded_runfile"
+  fi
 }
 
 handle_interrupt() {
@@ -89,33 +92,7 @@ self_test() {
   echo "SELF-TEST: FAIL"; return 1
 }
 
-OPT_SOURCE="online"
-OPT_RUNFILE=""
-OPT_BRANCH="latest"
-OPT_VERSION=""
-OPT_GPU=""
-OPT_NVIDIA_OPEN=""
-OPT_KEEP_RUNFILE=false
-OPT_PACSTALL_ACTION=1
-PACSTALL_ARGS=()
 
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    -h|--help) show_help; exit 0 ;;
-    --source) OPT_SOURCE="$2"; shift 2 ;;
-    --runfile) OPT_RUNFILE="$2"; shift 2 ;;
-    --branch) OPT_BRANCH="$2"; shift 2 ;;
-    --version) OPT_VERSION="$2"; shift 2 ;;
-    --gpu) OPT_GPU="$2"; shift 2 ;;
-    --nvidia-open) OPT_NVIDIA_OPEN="$2"; shift 2 ;;
-    --action) OPT_PACSTALL_ACTION="$2"; shift 2 ;;
-    --keep-runfile) OPT_KEEP_RUNFILE=true; shift ;;
-    --self-test) self_test; exit $? ;;
-    --print-versions) print_versions_cli; exit 0 ;;
-    -*) PACSTALL_ARGS+=("$1"); shift ;;
-    *) PACSTALL_ARGS+=("$1"); shift ;;
-  esac
-done
 
 install_missing_dependencies() {
   local -a missing=("$@")
@@ -481,7 +458,37 @@ print_versions_cli() {
   echo "LEGACY470=$legacy470"
   echo "LEGACY390=$legacy390"
   echo "LATEST_SUPPORT=$(gpu_support_label_for_version "$latest_available" "$base_url")"
+  echo "DETECTED_GPU=$detected_gpu"
 }
+
+
+OPT_SOURCE="online"
+OPT_RUNFILE=""
+OPT_BRANCH="latest"
+OPT_VERSION=""
+OPT_GPU=""
+OPT_NVIDIA_OPEN=""
+OPT_KEEP_RUNFILE=false
+OPT_PACSTALL_ACTION=1
+PACSTALL_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -h|--help) show_help; exit 0 ;;
+    --source) OPT_SOURCE="$2"; shift 2 ;;
+    --runfile) OPT_RUNFILE="$2"; shift 2 ;;
+    --branch) OPT_BRANCH="$2"; shift 2 ;;
+    --version) OPT_VERSION="$2"; shift 2 ;;
+    --gpu) OPT_GPU="$2"; shift 2 ;;
+    --nvidia-open) OPT_NVIDIA_OPEN="$2"; shift 2 ;;
+    --action) OPT_PACSTALL_ACTION="$2"; shift 2 ;;
+    --keep-runfile) OPT_KEEP_RUNFILE=true; shift ;;
+    --self-test) self_test; exit $? ;;
+    --print-versions) print_versions_cli; exit 0 ;;
+    -*) PACSTALL_ARGS+=("$1"); shift ;;
+    *) PACSTALL_ARGS+=("$1"); shift ;;
+  esac
+done
 
 
 if [[ ! -f $pacscript ]]; then error "pacscript introuvable: ${pacscript}"; exit 1; fi
@@ -543,7 +550,48 @@ fi
 sed -e "s|^pkgver=.*|pkgver='${pkgver}'|" -e "s|^nvidia_open=.*|nvidia_open='${nvidia_open}'|" "$pacscript" > "$generated_pacscript"
 
 info "Lancement de Pacstall avec $runfile..."
-pacstall "${PACSTALL_ARGS[@]}" "$generated_pacscript"
+
+run_pacstall_gui() {
+  local prompt_used=false
+
+  if command_exists pkexec; then
+    if pkexec pacstall "${PACSTALL_ARGS[@]}" "$generated_pacscript"; then
+      return 0
+    fi
+  fi
+  
+  local pass=""
+  if command_exists zenity; then
+    prompt_used=true
+    pass=$(zenity --password --title="Privilèges administrateur" --text="Mot de passe requis pour lancer l'installation avec pacstall :" 2>/dev/null || true)
+  elif command_exists kdialog; then
+    prompt_used=true
+    pass=$(kdialog --password "Mot de passe requis pour lancer l'installation avec pacstall :" 2>/dev/null || true)
+  fi
+
+  if [[ -n $pass ]]; then
+    echo "$pass" | sudo -S -v >/dev/null 2>&1
+    local auth_ret=$?
+    if [[ $auth_ret -eq 0 ]]; then
+      sudo pacstall "${PACSTALL_ARGS[@]}" "$generated_pacscript"
+      local ret=$?
+      pass=""
+      return $ret
+    else
+      pass=""
+      error "Mot de passe incorrect."
+      return 1
+    fi
+  else
+    if [[ $prompt_used == true ]]; then
+      error "Authentification annulee."
+      return 130
+    fi
+    sudo pacstall "${PACSTALL_ARGS[@]}" "$generated_pacscript"
+  fi
+}
+
+run_pacstall_gui
 
 if [[ $downloaded_by_script == true && $OPT_KEEP_RUNFILE == false ]]; then
   rm -f -- "$downloaded_runfile"
