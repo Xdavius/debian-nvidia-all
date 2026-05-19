@@ -250,6 +250,8 @@ export component AppWindow inherits Window {
     in-out property <string> status: "Pret";
     in-out property <string> logs: "";
     in-out property <bool> running: false;
+    in-out property <bool> dep-popup-visible: false;
+    in-out property <string> dep-popup-message: "";
     in-out property <bool> window-maximized: false;
     in-out property <bool> use-custom-frame: true;
 
@@ -261,6 +263,8 @@ export component AppWindow inherits Window {
     callback window_close();
     callback window_drag_start();
     callback window_drag(float, float);
+    callback dep_popup_yes();
+    callback dep_popup_no();
 
     min-width: 760px;
     min-height: 520px;
@@ -496,6 +500,66 @@ export component AppWindow inherits Window {
                     wrap: word-wrap;
                     vertical-alignment: bottom;
                     font-size: 12px;
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: parent.height;
+        visible: root.dep-popup-visible;
+        background: #00000099;
+        z: 2000;
+
+        Rectangle {
+            width: 560px;
+            height: 220px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: #42526f;
+            background: @linear-gradient(180deg, #1f2a3c 0%, #172133 100%);
+
+            Text {
+                x: 16px;
+                y: 14px;
+                text: "Dependances requises";
+                color: #f0f6ff;
+                font-size: 18px;
+                font-weight: 700;
+            }
+
+            Text {
+                x: 16px;
+                y: 48px;
+                width: parent.width - 32px;
+                height: 110px;
+                text: root.dep-popup-message;
+                wrap: word-wrap;
+                color: #d7e2f5;
+            }
+
+            HorizontalBox {
+                x: 16px;
+                y: parent.height - 50px;
+                width: parent.width - 32px;
+                spacing: 10px;
+
+                NvButton {
+                    primary: true;
+                    text: "Oui, continuer";
+                    min-width: 170px;
+                    clicked => { root.dep_popup_yes(); }
+                }
+
+                NvButton {
+                    text: "Non, annuler";
+                    min-width: 150px;
+                    clicked => { root.dep_popup_no(); }
                 }
             }
         }

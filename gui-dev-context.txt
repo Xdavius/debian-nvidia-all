@@ -1,33 +1,208 @@
-# Contexte de Développement de l'Interface Graphique (GUI Rust/Slint)
+# Contexte de Développement (GUI/TUI/CLI) - Debian NVIDIA Driver
 
-## Architecture Globale
-L'application "Debian NVIDIA Driver GUI" possède une interface graphique développée en Rust utilisant le framework Slint (`ui/app.slint`). Cette interface agit comme un Frontend (façade) qui configure et lance l'exécution des tâches via le Backend CLI Bash existant (`debian-nvidia-all-cli.sh`).
+Ce document sert de mémoire de projet pour éviter les régressions lors des évolutions GUI, TUI et CLI.
+Il est volontairement détaillé.
 
-## Rôle des Fichiers
-1. **`ui/app.slint`** : Définit la vue de l'application (Titre, design moderne "GTK/Gaming" avec des couleurs Debian/Nvidia, listes déroulantes, boutons, console intégrée).
-2. **`src/main.rs`** : Contient la logique applicative (modèles de données, récupération asynchrone des versions, lancements de l'installation).
-3. **`Cargo.toml`** : Configure la compilation du binaire pour générer l'exécutable `debian-nvidia-all-gui`.
-4. **`debian-nvidia-all-cli.sh`** : Script bash autonome qui détecte le matériel, télécharge, vérifie, et installe le pilote NVIDIA avec pacstall.
+## 1) Architecture actuelle (source de vérité)
+- Backend métier unique: `debian-nvidia-all-cli.sh`
+- Frontend terminal: `debian-nvidia-all-tui.sh`
+- Frontend graphique: `ui/app.slint` + `src/main.rs`
 
-## Fonctionnement du Flux
-1. **Démarrage (Auto-Détection)** : 
-   - Au lancement de la GUI, Rust lance un thread en arrière-plan qui appelle `bash debian-nvidia-all-cli.sh --print-versions`.
-   - Pendant ce temps, le menu déroulant affiche "Chargement des versions...".
-   - Le script Bash retourne un flux texte brut avec les versions disponibles et l'auto-détection du GPU (ex: `RECOMMENDED=595.71.05`, `LATEST=595.71.05`, `DETECTED_GPU=RTX 4090`).
-   - Le thread Rust parse ces données et met à jour dynamiquement le modèle Slint (`profile-model`). Si aucun GPU Nvidia n'est détecté sur le système, la mention "(pas de GPU Nvidia detecte)" est ajoutée au profil Recommandé.
+Principe clé:
+- Toute logique métier (dépendances, privilèges, détection/choix runfile, règles de version) doit vivre dans la CLI.
+- TUI/GUI orchestrent et affichent, sans dupliquer le backend.
 
-2. **Sélection et Exécution** :
-   - Quand l'utilisateur clique sur "Lancer l'installation", la logique Rust récupère le choix effectué.
-   - Rust convertit ce choix en un argument pour le CLI (si c'est "Recommandé" -> `--branch recommended`, si c'est "Latest" -> `--branch latest`, si c'est "Legacy 580xx (580.40)" -> `--version 580.40`).
-   - Le paramètre "Module noyau" (Open/Propriétaire) n'est **plus géré par la GUI**. Il s'appuie désormais à 100% sur les règles natives du CLI :
-     - Si la version est `>= 515` (Latest, 580), le script Bash force automatiquement le mode "Open" (`kernel-open`).
-     - Si la version est `< 515` (470, 390), le script Bash force le mode propriétaire.
-   - Rust spawn un processus enfant (via `script` pour capturer la sortie pseudo-terminal PTTY) qui appelle `debian-nvidia-all-cli.sh --source online [--branch <choix> | --version <choix>] --action 1`.
+## 2) Répartition des responsabilités
 
-3. **Retours (Logs)** :
-   - Les `stdout` et `stderr` du script Bash sont lus de manière asynchrone par des threads dédiés en Rust et envoyés vers la vue Slint (`ui.set_logs()`), avec un nettoyage des codes couleurs ANSI.
+### 2.1 CLI (`debian-nvidia-all-cli.sh`)
+La CLI est la couche métier et technique principale.
 
-## Règles de Maintenance
-- **Respect du Backend** : Il ne faut JAMAIS dupliquer la logique métier côté Rust si elle peut être gérée ou est déjà gérée par le script `debian-nvidia-all-cli.sh` (ex: la gestion du mode Open/Propriétaire).
-- **Gestion asynchrone** : Les appels réseau ou l'exécution du script d'installation doivent toujours se faire dans un thread (`thread::spawn`) afin de ne pas bloquer le thread principal de rendu de Slint.
-- **Séparation des responsabilités** : La GUI n'effectue aucune installation ou gestion de fichier système elle-même. Elle se contente d'orchestrer la commande shell et d'afficher les retours de la CLI.
+Responsabilités:
+- Vérification/installation des dépendances système.
+- Gestion des privilèges (élévation root) centralisée.
+- Installation de `spdx-licenses` et `pacstall`.
+- Sélection runfile local ou en ligne.
+- Génération pacscript final + exécution `pacstall`.
+- Exposition d'API "machine-readable" consommables par TUI/GUI.
+
+Fonctions importantes:
+- `run_as_root`:
+  - stratégie: `sudo` -> `pkexec` -> prompt GUI (`zenity`/`kdialog`) -> `sudo -S`
+- `check_dependencies`:
+  - étape 1/3: outils système
+  - étape 2/3: `spdx-licenses`
+  - étape 3/3: `pacstall`
+- `inspect_dependencies_cli`:
+  - inspection sans installation, sortie machine-readable
+- `print_versions_cli`:
+  - expose recommended/latest/legacy pour la GUI
+- `print_local_runfiles_cli`:
+  - expose la liste des runfiles locaux valides
+
+Hardening ajouté:
+- Si `/tmp/pacstall` est un fichier:
+  - suppression puis recréation dossier `/tmp/pacstall`
+  - fallback avec `run_as_root` si permissions insuffisantes.
+
+### 2.2 TUI (`debian-nvidia-all-tui.sh`)
+Le TUI est une façade UX terminale.
+
+Responsabilités:
+- Menus, navigation, aide à la saisie, résumé lisible.
+- Appel de la CLI pour toute action métier.
+
+Le TUI délègue désormais à la CLI:
+- check dépendances (`--inspect-dependencies`, puis `--check-dependencies` après validation)
+- runfiles locaux (`--print-local-runfiles`)
+- installation finale
+
+Comportement dépendances au lancement:
+1. Inspection via `--inspect-dependencies`
+2. Affichage des manques
+3. Confirmation Oui/Non
+4. Validation Entrée explicite avant installation dépendances
+5. Installation via `--check-dependencies`
+
+UX actuelle TUI:
+- `b` (back) disponible sur tous les menus sauf première page.
+- `q` (quit) formaté dans l'aide à la saisie.
+- Aide à la saisie colorée:
+  - lettres/touches en bleu
+  - `Entree` en vert
+  - `ANNULER` en rouge
+- Première page:
+  - cache l'option locale si aucun runfile valide détecté
+  - message clair à l'utilisateur (pas de crash)
+- Menu module noyau orienté utilisateur:
+  - `auto`
+  - `proprietaire`
+  - `open-kernel-module`
+  - mapping interne vers CLI:
+    - `proprietaire` -> `--nvidia-open false`
+    - `open-kernel-module` -> `--nvidia-open true`
+- Résumé:
+  - affiche des libellés métier (pas d'ID interne type `Action: 2`)
+
+### 2.3 GUI (`ui/app.slint` + `src/main.rs`)
+La GUI est une façade graphique moderne sur la CLI.
+
+Responsabilités:
+- Affichage, sélection profil, lancement, logs, statut.
+- Orchestration asynchrone des appels CLI.
+
+Ne fait pas:
+- logique métier dépendances/version/root en local.
+
+## 3) CLI: options publiques à connaître
+
+Options importantes utilisées par TUI/GUI:
+- `--help`
+- `--self-test`
+- `--check-dependencies`
+- `--inspect-dependencies`
+- `--print-versions`
+- `--print-local-runfiles`
+- `--source <local|online>`
+- `--branch <latest|recommended|stable|feature|beta|legacy|all>`
+- `--version <x.y.z>`
+- `--runfile <fichier>`
+- `--nvidia-open <true|false>`
+- `--action <1|2|3>`
+- `--keep-runfile`
+
+Comportement CLI:
+- sans argument -> affiche `--help` puis quitte.
+
+## 4) Flux GUI détaillé (actuel)
+
+### 4.1 Démarrage GUI
+- Rust résout le chemin helper (`debian-nvidia-all-cli.sh`) via:
+  - env `NVIDIA_GUI_HELPER`
+  - chemins candidats (repo/exe/cwd)
+- Thread asynchrone `--print-versions` pour alimenter les profils.
+
+### 4.2 Au clic "Lancer l'installation"
+1. Étape log `[step 1/4]` résolution backend
+2. Étape log `[step 2/4]` inspection dépendances (`--inspect-dependencies`)
+3. Si dépendances manquantes:
+   - pop-up modal affiché (Oui/Non)
+   - détails listés dans logs et message popup
+4. Si user clique Non:
+   - fermeture popup
+   - statut: `Interrompu`
+   - retour état initial (pas de lancement)
+5. Si user clique Oui:
+   - lancement backend dans PTY (`script`)
+   - commande:
+     - `bash helper --check-dependencies && bash helper --source online ... --action 1`
+6. Streams `stdout`/`stderr` lus en asynchrone, ANSI nettoyé, logs live.
+
+### 4.3 Pop-up dépendances (Slint)
+- Propriétés UI:
+  - `dep-popup-visible`
+  - `dep-popup-message`
+- Callbacks:
+  - `dep_popup_yes()`
+  - `dep_popup_no()`
+
+## 5) Contrat d'intégration TUI/GUI -> CLI
+
+### 5.1 Sortie de `--inspect-dependencies`
+Format texte clé=valeur:
+- `MISSING_TOOLS=`
+- `MISSING_PACKAGES=`
+- `MISSING_SPDX=true|false`
+- `MISSING_PACSTALL=true|false`
+- `HAS_MISSING=true|false`
+
+### 5.2 Sortie de `--print-versions`
+Format texte clé=valeur (utilisé GUI):
+- `RECOMMENDED=`
+- `LATEST=`
+- `LEGACY580=`
+- `LEGACY470=`
+- `LEGACY390=`
+- `LATEST_SUPPORT=`
+- `DETECTED_GPU=`
+
+### 5.3 Sortie de `--print-local-runfiles`
+- une ligne par runfile valide (nom de fichier)
+
+## 6) Détails UX importants (non-régression)
+
+### TUI
+- Première page doit rester simple pour néophytes:
+  - `Recherche et telechargement en ligne`
+  - `Utiliser un Runfile local` (uniquement si dispo)
+- Menu local doit afficher le vrai nom du runfile (si plusieurs fichiers).
+- Aide saisie colorée cohérente avec palette existante.
+
+### GUI
+- Toujours afficher étapes visibles dans logs, surtout avant lancement install.
+- En cas de refus dépendances: statut explicite `Interrompu`.
+
+## 7) Règles de maintenance
+- Ne pas réintroduire de logique métier dans TUI/GUI.
+- Toute nouvelle règle système/root/dépendance doit être ajoutée en CLI puis consommée via option dédiée.
+- Garder les appels bloquants/réseau en thread côté Rust.
+- Conserver le parsing robuste des sorties clé=valeur.
+- Préserver la compatibilité des options CLI utilisées par TUI/GUI.
+
+## 8) Vérifications minimales après modification
+- CLI:
+  - `bash -n debian-nvidia-all-cli.sh`
+  - `bash debian-nvidia-all-cli.sh --help`
+- TUI:
+  - `bash -n debian-nvidia-all-tui.sh`
+- GUI:
+  - `cargo check`
+
+## 9) Résumé des évolutions récentes
+- Centralisation privilèges en CLI (`run_as_root`).
+- Ajout API CLI:
+  - `--check-dependencies`
+  - `--inspect-dependencies`
+  - `--print-local-runfiles`
+- TUI transformé en façade backend CLI.
+- GUI: popup dépendances + logs d'étapes + statut interruption.
+- Hardening `/tmp/pacstall` (fichier -> dossier avec élévation si besoin).
