@@ -93,6 +93,14 @@ Responsabilités:
 Ne fait pas:
 - logique métier dépendances/version/root en local.
 
+Variables d'environnement GUI:
+- `NVIDIA_GUI_HELPER`:
+  - chemin absolu/relatif vers un script CLI alternatif à utiliser comme backend.
+  - utile pour tests locaux et scénarios de dev.
+- `NVIDIA_GUI_TEST_MISSING_DEPS`:
+  - si `1|true|yes|on`, force la simulation de dépendances manquantes côté GUI
+  - permet de tester le pop-up dépendances sans modifier l'état réel de la machine.
+
 ## 3) CLI: options publiques à connaître
 
 Options importantes utilisées par TUI/GUI:
@@ -124,6 +132,7 @@ Comportement CLI:
 ### 4.2 Au clic "Lancer l'installation"
 1. Étape log `[step 1/4]` résolution backend
 2. Étape log `[step 2/4]` inspection dépendances (`--inspect-dependencies`)
+   - si `NVIDIA_GUI_TEST_MISSING_DEPS` est actif: simulation de manques pour forcer le pop-up
 3. Si dépendances manquantes:
    - pop-up modal affiché (Oui/Non)
    - détails listés dans logs et message popup
@@ -206,3 +215,26 @@ Format texte clé=valeur (utilisé GUI):
 - TUI transformé en façade backend CLI.
 - GUI: popup dépendances + logs d'étapes + statut interruption.
 - Hardening `/tmp/pacstall` (fichier -> dossier avec élévation si besoin).
+- Ajout mode test GUI: `NVIDIA_GUI_TEST_MISSING_DEPS` pour valider le pop-up dépendances.
+- Fix freeze GUI lors de resize/minimize/restore:
+  - solution: préférer `SLINT_BACKEND=winit-femtovg` par défaut dans `src/main.rs`
+  - fallback de sécurité conservé vers `winit-software` si création UI impossible.
+
+## 10) Mémo debug (variables d'env)
+
+### GUI
+- `NVIDIA_GUI_HELPER=/chemin/vers/debian-nvidia-all-cli.sh`
+  - force la GUI à utiliser un helper précis.
+- `NVIDIA_GUI_TEST_MISSING_DEPS=1`
+  - simule des dépendances manquantes pour tester le pop-up.
+
+Exemples:
+- `NVIDIA_GUI_TEST_MISSING_DEPS=1 cargo run`
+- `NVIDIA_GUI_HELPER=./debian-nvidia-all-cli.sh cargo run`
+
+### Notes
+- Le mode XWayland est maintenant automatique par défaut (avec fallback Wayland natif),
+  il n'y a plus de variable d'environnement dédiée à activer.
+- Historique bug GUI (freeze resize/minimize/restore):
+  - symptôme: interface qui se figeait après réduction/agrandissement ou changements de taille.
+  - correctif appliqué: backend Slint `winit-femtovg` par défaut, avec fallback `winit-software` en cas d'échec.

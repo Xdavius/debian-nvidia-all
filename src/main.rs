@@ -153,6 +153,16 @@ fn libxkbcommon_x11_available() -> bool {
     false
 }
 
+fn env_truthy(name: &str) -> bool {
+    matches!(
+        std::env::var(name)
+            .ok()
+            .map(|v| v.trim().to_ascii_lowercase())
+            .as_deref(),
+        Some("1" | "true" | "yes" | "on")
+    )
+}
+
 fn inspect_dependencies(helper: &Path) -> Result<DepInspection, String> {
     let output = Command::new("bash")
         .arg(helper)
@@ -595,6 +605,19 @@ fn main() {
                 return;
             }
         };
+        let mut dep_report = dep_report;
+        if env_truthy("NVIDIA_GUI_TEST_MISSING_DEPS") {
+            append_ui_log(&ui, "[test] NVIDIA_GUI_TEST_MISSING_DEPS=1 actif: simulation dependances manquantes.");
+            dep_report.has_missing = true;
+            if dep_report.missing_tools.is_empty() {
+                dep_report.missing_tools = "curl lspci".to_string();
+            }
+            if dep_report.missing_packages.is_empty() {
+                dep_report.missing_packages = "curl pciutils".to_string();
+            }
+            dep_report.missing_spdx = true;
+            dep_report.missing_pacstall = true;
+        }
 
         if dep_report.has_missing {
             let mut details = Vec::new();
