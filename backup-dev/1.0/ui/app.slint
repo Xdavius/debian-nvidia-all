@@ -1,0 +1,174 @@
+import { VerticalBox, HorizontalBox, ComboBox, Button } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    in-out property <[string]> profile-model: [
+        "latest",
+        "recommended",
+        "legacy580",
+        "legacy470",
+        "legacy390"
+    ];
+    in-out property <[string]> open-model: ["auto", "open", "proprietary"];
+
+    in-out property <int> profile-index: 1;
+    in-out property <int> open-index: 0;
+    in-out property <string> status: "Pret";
+    in-out property <string> logs: "";
+    in-out property <bool> running: false;
+
+    callback run();
+    callback copy_logs();
+
+    min-width: 760px;
+    min-height: 520px;
+    max-width: 4000px;
+    max-height: 3000px;
+    preferred-width: 980px;
+    preferred-height: 700px;
+    title: "NVIDIA Driver Run // Gamer Mode";
+    background: #060913;
+
+    Rectangle {
+        x: 10px;
+        y: 10px;
+        width: parent.width - 20px;
+        height: parent.height - 20px;
+        background: #0a0f1f;
+        border-color: #1ee6a8;
+        border-width: 1px;
+        border-radius: 14px;
+
+        VerticalBox {
+            padding: 16px;
+            spacing: 10px;
+
+            Text {
+                text: "DEBIAN NVIDIA DRIVER ALL";
+                color: #65f6ff;
+                font-size: 28px;
+                font-weight: 700;
+            }
+
+            Text {
+                text: "Build and install NVIDIA driver for Debian";
+                color: #9af6d2;
+                font-size: 13px;
+            }
+
+            Rectangle {
+                height: 1px;
+                background: #19314d;
+            }
+
+            Rectangle {
+                background: #0e162b;
+                border-color: #20406b;
+                border-width: 1px;
+                border-radius: 10px;
+
+                VerticalBox {
+                    padding: 10px;
+                    spacing: 8px;
+
+                    HorizontalBox {
+                        spacing: 10px;
+                        Text {
+                            text: "Profil";
+                            color: #d8e6ff;
+                            width: 120px;
+                        }
+                        ComboBox {
+                            model: root.profile-model;
+                            current-index: root.profile-index;
+                            selected => { root.profile-index = self.current-index; }
+                        }
+                    }
+
+                    HorizontalBox {
+                        spacing: 10px;
+                        Text {
+                            text: "Module noyau";
+                            color: #d8e6ff;
+                            width: 120px;
+                        }
+                        ComboBox {
+                            model: root.open-model;
+                            current-index: root.open-index;
+                            selected => { root.open-index = self.current-index; }
+                        }
+                    }
+                }
+            }
+
+            Text {
+                text: "Pour latest et pour 580, kernel-open est force automatiquement (proprietaire ignore).";
+                color: #95afdb;
+                wrap: word-wrap;
+                font-size: 12px;
+            }
+
+            HorizontalBox {
+                spacing: 8px;
+                Button {
+                    text: "DEPLOY";
+                    enabled: !root.running;
+                    clicked => { root.run(); }
+                }
+                Button {
+                    text: "EXPORT LOG";
+                    clicked => { root.copy_logs(); }
+                }
+                Rectangle {
+                    background: #0f2238;
+                    border-color: #2f7ec7;
+                    border-width: 1px;
+                    border-radius: 8px;
+                    height: 32px;
+                    vertical-stretch: 1;
+
+                    Text {
+                        x: 8px;
+                        y: 7px;
+                        width: parent.width - 14px;
+                        text: root.status;
+                        color: #d7ecff;
+                        vertical-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: #19314d;
+            }
+
+            Text {
+                text: "SYSTEM LOG STREAM";
+                color: #65f6ff;
+                font-size: 16px;
+                font-weight: 600;
+            }
+
+            Rectangle {
+                background: #03050a;
+                border-color: #1ee6a8;
+                border-width: 1px;
+                border-radius: 8px;
+                vertical-stretch: 1;
+                min-height: 260px;
+
+                Text {
+                    x: 8px;
+                    y: 8px;
+                    width: parent.width - 16px;
+                    height: parent.height - 16px;
+                    text: root.logs;
+                    color: #d8ffe6;
+                    wrap: word-wrap;
+                    font-size: 12px;
+                }
+            }
+        }
+    }
+}

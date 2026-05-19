@@ -1,0 +1,601 @@
+import { VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+component WindowActionButton inherits Rectangle {
+    in property <string> label: "";
+    in property <bool> enabled: true;
+    in property <bool> danger: false;
+    in property <length> label-offset-y: 0px;
+    callback clicked();
+
+    width: 30px;
+    height: 24px;
+    border-radius: 7px;
+    border-width: 1px;
+    border-color: !root.enabled
+        ? #7a8190aa
+        : (touch.has-hover ? (root.danger ? #f08aa4cc : #78a6f2cc) : #9fb4d066);
+    background: !root.enabled
+        ? #2b303955
+        : (touch.pressed
+            ? (root.danger ? @linear-gradient(180deg, #a02a4acc 0%, #7f1e3acc 100%) : @linear-gradient(180deg, #29364acc 0%, #202a3acc 100%))
+            : (touch.has-hover
+                ? (root.danger ? @linear-gradient(180deg, #d63d68bb 0%, #a52e52bb 100%) : @linear-gradient(180deg, #2a3750bb 0%, #222d41bb 100%))
+                : @linear-gradient(180deg, #1f293899 0%, #1a213099 100%)));
+
+    Text {
+        x: 0px;
+        y: root.label-offset-y;
+        width: parent.width;
+        height: parent.height - root.label-offset-y;
+        text: root.label;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: root.enabled ? #eaf1ff : #aeb7c7;
+        font-size: 13px;
+        font-weight: 700;
+    }
+
+    touch := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component NvButton inherits Rectangle {
+    in property <string> text: "";
+    in property <bool> enabled: true;
+    in property <bool> primary: false;
+    callback clicked();
+
+    height: 34px;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: !root.enabled
+        ? #4a4e57
+        : (touch.pressed
+            ? (root.primary ? #9fcd36 : #7fa8ea)
+            : (touch.has-hover ? (root.primary ? #95c62e : #78a6f2) : (root.primary ? #6a9f08 : #41506e)));
+    background: !root.enabled
+        ? #2b3039
+        : (root.primary
+            ? (touch.pressed
+                ? @linear-gradient(180deg, #5f9800 0%, #4b7b00 100%)
+                : (touch.has-hover
+                    ? @linear-gradient(180deg, #79b108 0%, #628f07 100%)
+                    : @linear-gradient(180deg, #6fa206 0%, #587f06 100%)))
+            : (touch.pressed
+                ? @linear-gradient(180deg, #29364a 0%, #202a3a 100%)
+                : (touch.has-hover
+                    ? @linear-gradient(180deg, #2a3750 0%, #222d41 100%)
+                    : @linear-gradient(180deg, #1f2938 0%, #1a2130 100%))));
+    animate border-color { duration: 100ms; }
+
+    Text {
+        x: 12px;
+        y: 7px;
+        width: parent.width - 24px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        color: root.enabled ? #f4f8ff : #aeb7c7;
+        text: root.text;
+        font-weight: 700;
+        wrap: no-wrap;
+    }
+
+    touch := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+component InfoBadge inherits Rectangle {
+    in property <bool> active: true;
+
+    width: 22px;
+    height: 22px;
+    border-radius: 11px;
+    border-width: 1px;
+    border-color: #6fa206;
+    background: active ? #76b900 : #4f6f16;
+    opacity: active ? 1.0 : 0.8;
+    animate opacity { duration: 180ms; }
+
+    Text {
+        x: 0px;
+        y: 1px;
+        width: parent.width;
+        height: parent.height;
+        text: "i";
+        color: #0d1a06;
+        font-size: 14px;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+component SafeRoundedDropdown inherits Rectangle {
+    in-out property <[string]> model: [];
+    in-out property <int> current-index: 0;
+    in property <bool> enabled: true;
+    callback selected(int);
+
+    private property <bool> open: false;
+    private property <int> row-height: 30;
+    private property <length> popup-height: model.length * row-height * 1px;
+    public function close_menu() {
+        root.open = false;
+    }
+
+    background: transparent;
+    height: 34px;
+    z: 100;
+
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: 34px;
+        background: enabled
+            ? (root.open
+                ? @linear-gradient(180deg, #263245 0%, #1d2737 100%)
+                : @linear-gradient(180deg, #1f2938 0%, #1a2130 100%))
+            : #2b3039;
+        border-color: !enabled
+            ? #4a4e57
+            : (header_touch.has-hover || root.open ? #78a6f2 : #41506e);
+        border-width: 1px;
+        border-radius: 10px;
+        animate border-color { duration: 120ms; }
+
+        Rectangle {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height;
+            border-radius: 10px;
+            background: transparent;
+            border-width: root.open ? 1px : 0px;
+            border-color: #76b90066;
+            animate border-width { duration: 120ms; }
+        }
+
+        Text {
+            x: 10px;
+            y: 8px;
+            width: parent.width - 34px;
+            text: root.model.length == 0
+                ? "Aucune version"
+                : (root.current-index >= 0 && root.current-index < root.model.length
+                    ? root.model[root.current-index]
+                    : root.model[0]);
+            color: #e8eefc;
+            vertical-alignment: center;
+            wrap: no-wrap;
+        }
+
+        Text {
+            x: parent.width - 18px;
+            y: 8px;
+            text: root.open ? "▲" : "▼";
+            color: root.open ? #93c7ff : #b8c7e6;
+        }
+
+        header_touch := TouchArea {
+            width: parent.width;
+            height: parent.height;
+            enabled: root.enabled;
+            clicked => {
+                root.open = !root.open;
+            }
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.cancel) {
+                    root.open = false;
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        x: 0px;
+        y: 38px;
+        z: 500;
+        width: parent.width;
+        height: root.popup-height;
+        visible: root.open && root.model.length > 0;
+        clip: true;
+        background: @linear-gradient(180deg, #212d3f 0%, #161f2d 100%);
+        border-color: #5f7ea8;
+        border-width: 1px;
+        border-radius: 10px;
+
+        for entry[i] in root.model : Rectangle {
+            x: 0px;
+            y: i * root.row-height * 1px;
+            width: parent.width;
+            height: root.row-height * 1px;
+            background: row_touch.has-hover
+                ? #314561
+                : (i == root.current-index ? #3a5274 : (Math.mod(i, 2) == 0 ? #1b2433 : #212c3d));
+            animate background { duration: 90ms; }
+
+            Rectangle {
+                x: 0px;
+                y: 4px;
+                width: 3px;
+                height: parent.height - 8px;
+                border-radius: 2px;
+                background: i == root.current-index ? #76b900 : #00000000;
+            }
+
+            Text {
+                x: 12px;
+                y: 7px;
+                width: parent.width - 24px;
+                text: entry;
+                color: i == root.current-index ? #f3f7ff : #dfe7f8;
+                vertical-alignment: center;
+                wrap: no-wrap;
+            }
+
+            row_touch := TouchArea {
+                width: parent.width;
+                height: parent.height;
+                enabled: root.enabled;
+                clicked => {
+                    root.current-index = i;
+                    root.open = false;
+                    root.selected(i);
+                }
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.cancel) {
+                        root.open = false;
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    in-out property <[string]> profile-model: [
+        "latest",
+        "recommended",
+        "legacy580",
+        "legacy470",
+        "legacy390"
+    ];
+    in-out property <[string]> open-model: ["auto", "open", "proprietary"];
+
+    in-out property <int> profile-index: 1;
+    in-out property <int> open-index: 0;
+    in-out property <string> status: "Pret";
+    in-out property <string> logs: "";
+    in-out property <bool> running: false;
+    in-out property <bool> dep-popup-visible: false;
+    in-out property <string> dep-popup-message: "";
+    in-out property <bool> window-maximized: false;
+    in-out property <bool> use-custom-frame: true;
+
+    callback run();
+    callback copy_logs();
+    callback close_transients();
+    callback window_minimize();
+    callback window_toggle_maximize();
+    callback window_close();
+    callback window_drag_start();
+    callback window_drag(float, float);
+    callback dep_popup_yes();
+    callback dep_popup_no();
+
+    min-width: 760px;
+    min-height: 520px;
+    max-width: 4000px;
+    max-height: 3000px;
+    preferred-width: 980px;
+    preferred-height: 700px;
+    title: "Debian NVIDIA Driver GUI";
+    no-frame: root.use-custom-frame;
+    resize-border-width: 6px;
+    background: #161a22;
+
+    Rectangle {
+        x: 10px;
+        y: 10px;
+        width: parent.width - 20px;
+        height: 132px;
+        visible: root.use-custom-frame;
+        border-radius: 10px;
+        border-width: 1px;
+        border-color: #34405a;
+        background: #10151f;
+        clip: true;
+
+        Image {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height;
+            source: @image-url("header.png");
+            image-fit: cover;
+        }
+
+        Text {
+            x: 14px;
+            y: 14px;
+            text: "Debian NVIDIA Driver GUI";
+            color: #ffffff;
+            font-size: 26px;
+            font-weight: 800;
+        }
+
+        Text {
+            x: 16px;
+            y: 94px;
+            text: "Look GTK, esprit gaming, moteur CLI natif";
+            color: #e7eefc;
+            font-size: 14px;
+        }
+
+        drag_zone := TouchArea {
+            x: 0px;
+            y: 0px;
+            width: parent.width - 110px;
+            height: parent.height;
+            enabled: root.use-custom-frame;
+            double-clicked => { root.window_toggle_maximize(); }
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) {
+                    root.window_drag_start();
+                }
+            }
+            moved => {
+                if (self.pressed) {
+                    root.window_drag(
+                        (self.mouse-x - self.pressed-x) / 1px,
+                        (self.mouse-y - self.pressed-y) / 1px
+                    );
+                }
+            }
+        }
+
+        buttons_row := Rectangle {
+            x: parent.width - 108px;
+            y: 8px;
+            width: 102px;
+            height: 24px;
+            background: #00000000;
+            visible: root.use-custom-frame;
+
+            WindowActionButton {
+                x: 0px;
+                y: 0px;
+                label: "_";
+                label-offset-y: -1px;
+                clicked => { root.window_minimize(); }
+            }
+
+            WindowActionButton {
+                x: 36px;
+                y: 0px;
+                label: root.window-maximized ? "❐" : "□";
+                label-offset-y: 0px;
+                clicked => { root.window_toggle_maximize(); }
+            }
+
+            WindowActionButton {
+                x: 72px;
+                y: 0px;
+                label: "x";
+                danger: true;
+                label-offset-y: 0px;
+                clicked => { root.window_close(); }
+            }
+        }
+    }
+
+    Rectangle {
+        x: 10px;
+        y: root.use-custom-frame ? 152px : 10px;
+        width: parent.width - 20px;
+        height: root.use-custom-frame ? parent.height - 162px : parent.height - 20px;
+        background: #1b212c;
+        border-color: #313949;
+        border-width: 1px;
+        border-radius: 14px;
+
+        VerticalBox {
+            padding: 16px;
+            spacing: 10px;
+
+            Rectangle {
+                background: #202734;
+                border-color: #34405a;
+                border-width: 1px;
+                border-radius: 10px;
+                z: 50;
+
+                VerticalBox {
+                    padding: 10px;
+                    spacing: 8px;
+
+                    HorizontalBox {
+                        spacing: 10px;
+                        Text {
+                            text: "Choix de la version";
+                            color: #e8eefc;
+                            font-size: 16px;
+                            width: 210px;
+                            height: 34px;
+                            vertical-alignment: center;
+                        }
+                        profile_dropdown := SafeRoundedDropdown {
+                            horizontal-stretch: 1;
+                            model: root.profile-model;
+                            current-index: root.profile-index;
+                            selected(i) => { root.profile-index = i; }
+                            enabled: !root.running;
+                        }
+                    }
+                }
+            }
+
+            HorizontalBox {
+                spacing: 8px;
+
+                InfoBadge {
+                    y: 2px;
+                    active: true;
+                }
+
+                Text {
+                    horizontal-stretch: 1;
+                    text: "Pour Latest et 580, kernel-open est force automatiquement. Pour 470/390, mode proprietaire.";
+                    color: #b5c0d6;
+                    wrap: word-wrap;
+                    font-size: 13px;
+                }
+            }
+
+            HorizontalBox {
+                spacing: 8px;
+
+                NvButton {
+                    primary: true;
+                    text: root.running ? "Installation en cours..." : "Lancer l'installation";
+                    enabled: !root.running;
+                    min-width: 190px;
+                    clicked => { root.run(); }
+                }
+
+                NvButton {
+                    text: "Copier les logs";
+                    min-width: 120px;
+                    clicked => { root.copy_logs(); }
+                }
+
+                Rectangle {
+                    background: #151d2d;
+                    border-color: #3e4b63;
+                    border-width: 1px;
+                    border-radius: 8px;
+                    height: 32px;
+                    horizontal-stretch: 1;
+                    min-width: 260px;
+
+                    Text {
+                        x: 8px;
+                        y: 7px;
+                        width: parent.width - 14px;
+                        text: root.status;
+                        color: #dfe7f5;
+                        vertical-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 1px;
+                background: #2c3444;
+            }
+
+            Text {
+                text: "Journal systeme";
+                color: #d6dfef;
+                font-size: 16px;
+                font-weight: 600;
+            }
+
+            Rectangle {
+                background: #0f131b;
+                border-color: #2d3648;
+                border-width: 1px;
+                border-radius: 8px;
+                clip: true;
+                vertical-stretch: 1;
+                min-height: 260px;
+
+                Text {
+                    x: 8px;
+                    y: 8px;
+                    width: parent.width - 16px;
+                    height: parent.height - 16px;
+                    text: root.logs;
+                    color: #d5dceb;
+                    wrap: word-wrap;
+                    vertical-alignment: bottom;
+                    font-size: 12px;
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: parent.height;
+        visible: root.dep-popup-visible;
+        background: #00000099;
+        z: 2000;
+
+        Rectangle {
+            width: 560px;
+            height: 220px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: #42526f;
+            background: @linear-gradient(180deg, #1f2a3c 0%, #172133 100%);
+
+            Text {
+                x: 16px;
+                y: 14px;
+                text: "Dependances requises";
+                color: #f0f6ff;
+                font-size: 18px;
+                font-weight: 700;
+            }
+
+            Text {
+                x: 16px;
+                y: 48px;
+                width: parent.width - 32px;
+                height: 110px;
+                text: root.dep-popup-message;
+                wrap: word-wrap;
+                color: #d7e2f5;
+            }
+
+            HorizontalBox {
+                x: 16px;
+                y: parent.height - 50px;
+                width: parent.width - 32px;
+                spacing: 10px;
+
+                NvButton {
+                    primary: true;
+                    text: "Oui, continuer";
+                    min-width: 170px;
+                    clicked => { root.dep_popup_yes(); }
+                }
+
+                NvButton {
+                    text: "Non, annuler";
+                    min-width: 150px;
+                    clicked => { root.dep_popup_no(); }
+                }
+            }
+        }
+    }
+
+    close_transients => {
+        profile_dropdown.close_menu();
+    }
+}

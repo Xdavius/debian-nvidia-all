@@ -6,3 +6,6 @@ NVIDIA-Linux-*.run
 # Generated pacscripts
 nvidia-driver-run-*.pacscript
 pacscript/nvidia-driver-run-*.pacscript
+
+# Rust build output
+target/

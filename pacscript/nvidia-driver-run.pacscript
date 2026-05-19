@@ -47,36 +47,20 @@ depends=(
 makedepends=('build-essential' 'kmod' 'awk')
 source=(
   "NVIDIA-Linux-x86_64-${pkgver}.run"
-  "nvidia-settings-libxnvctrl_so.diff"
-  "nvidia-open-gcc-ibt-sls.diff"
-  "Add-IBT-support.diff"
   "make-modeset-fbdev-default.diff"
-  "make-modeset-fbdev-default-565.diff"
-  "silence-event-assert-until-570.diff"
   "fix-hdmi-names.diff"
-  "Enable-atomic-kernel-modesetting-by-default.diff"
   "0001-Enable-atomic-kernel-modesetting-by-default.diff"
   "0002-Add-IBT-support.diff"
   "fix-hw-cursor-kde.diff"
   "nvidia-bsb-dsc-fix.diff"
-  "linux-version.diff"
-  "455-crashfix.diff"
-  "01-ipmi-vm.diff"
-  "02-ipmi-vm.diff"
-  "list_is_first.diff"
-  "legacy-kernel-6.4.diff"
-  "legacy-kernel-6.5.diff"
-  "legacy-kernel-6.6.diff"
   "kernel-6.12.patch"
   "kernel-6.17.patch"
   "kernel-6.19.patch"
   "470-kernel-7.0.patch"
   "kernel-7.0.patch"
-  "kernel-7.0-580.patch"
+  "580-kernel-7.0.patch"
   "kernel-7.1.patch"
-  "gcc-14.diff"
   "gcc-15.diff"
-  "GFP_RETRY_MAYFAIL-test.diff"
   "390-kernel-7.0.patch"
 )
 sha256sums=('SKIP')
@@ -177,54 +161,31 @@ _patch_is_closed() {
 }
 
 _cond_major_390() { [[ $(_ver_major) == 390 ]]; }
-_cond_libxnvctrl() { [[ $libxnvctrl_patch == "true" ]]; }
-_cond_open_lt525() { _patch_is_open && [[ $(_ver_major) -lt 525 ]]; }
-_cond_open_570() { _patch_is_open && [[ $(_ver_major) == 570 ]]; }
 _cond_open_565() { _patch_is_open && [[ $(_ver_major) == 565 ]]; }
 _cond_open_580() { _patch_is_open && [[ $(_ver_major) == 580 ]]; }
 _cond_open_550_564() { _patch_is_open && [[ $(_ver_major) -ge 550 && $(_ver_major) -lt 565 ]]; }
 _cond_open_580_594() { _patch_is_open && [[ $(_ver_major) -ge 580 && $(_ver_major) -lt 595 ]]; }
 _cond_open_ge580() { _patch_is_open && [[ $(_ver_major) -ge 580 ]]; }
 _cond_bsb_dsc() { _patch_is_open && [[ ${bsb_dsc_fix:-false} == "true" && $(_ver_major) -ge 580 ]]; }
-_cond_closed_le455() { _patch_is_closed && [[ $(_ver_major) -le 455 ]]; }
-_cond_closed_455_crashfix() { _patch_is_closed && _driver_matches "455.2*" "455.3*" "455.4*"; }
-_cond_closed_ipmi_vm1() { _patch_is_closed && _driver_matches "396*" "410.5*" "410.6*" "410.7*" "415.1*" && _kernel_ge "$(_kernel_triplet)" "4.20.0"; }
-_cond_closed_ipmi_vm2() { _patch_is_closed && _driver_matches "410.5*" "410.6*" "410.7*" "415.1*" && _kernel_ge "$(_kernel_triplet)" "4.20.0"; }
-_cond_closed_list_is_first() { _patch_is_closed && _driver_matches "396*" "410*" "415*" "418.3*" "418.4*" && _kernel_ge "$(_kernel_triplet)" "5.1.0"; }
-_cond_closed_470199_k64() { _patch_is_closed && _driver_matches "470.199*" && _kernel_ge "$(_kernel_triplet)" "6.4.0"; }
-_cond_closed_470199_k65() { _patch_is_closed && _driver_matches "470.199*" && _kernel_ge "$(_kernel_triplet)" "6.5.0"; }
-_cond_closed_470199_k66() { _patch_is_closed && _driver_matches "470.199*" && _kernel_ge "$(_kernel_triplet)" "6.6.0"; }
 _cond_closed_56557_k612() { _patch_is_closed && _driver_matches "565.57*" && _kernel_ge "$(_kernel_triplet)" "6.12.0"; }
 _cond_open_590_k619() { _patch_is_open && [[ $(_ver_major) == 590 ]] && _kernel_ge "$(_kernel_triplet)" "6.19.0"; }
 _cond_closed_470xx() { _patch_is_closed && [[ $(_ver_major) == 470 ]]; }
-_cond_closed_470xx_k610() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "6.10.0"; }
 _cond_closed_470xx_k612() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "6.12.0"; }
-_cond_closed_470xx_k613() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "6.13.0"; }
-_cond_closed_470xx_k614() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "6.14.0"; }
-_cond_closed_470xx_k615() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "6.15.0"; }
-_cond_closed_470xx_k617() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "6.17.0"; }
-_cond_closed_470xx_k619() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "6.19.0"; }
-_cond_closed_470xx_k70() { _cond_closed_470xx && _kernel_ge "$(_kernel_triplet)" "7.0.0"; }
 _cond_open_590_595_k70() {
   _patch_is_open && [[ $(_ver_major) == 590 || $(_ver_major) == 595 ]] &&
     [[ "$pkgver" != "595.44.06" && "$pkgver" != "595.44.07" ]] &&
     _kernel_ge "$(_kernel_triplet)" "7.0.0" && _ver_le "$pkgver" "595.58.03"
 }
-_cond_580_k70() { [[ $(_ver_major) == 580 ]] && _kernel_ge "$(_kernel_triplet)" "7.0.0" && _ver_le "$pkgver" "580.142"; }
+_cond_580_k70() { _patch_is_open && [[ $(_ver_major) == 580 ]]; }
 _cond_open_595_k71() {
   _patch_is_open && [[ $(_ver_major) == 595 ]] &&
     [[ "$pkgver" != "595.44.06" && "$pkgver" != "595.44.07" ]] &&
     _kernel_ge "$(_kernel_triplet)" "7.1.0" && _ver_le "$pkgver" "595.58.03"
 }
-_cond_gcc14_470() { _patch_is_closed && [[ $(_ver_major) == 470 && $(_gcc_major) == 14 ]]; }
-_cond_gcc14_non470() { _patch_is_closed && [[ $(_ver_major) != 470 && $(_gcc_major) == 14 ]]; }
 _cond_gcc15() { [[ $(_gcc_major) == 15 ]]; }
 _cond_never() { return 1; }
 _cond_modeset_default() {
   { _cond_open_550_564; } || { _patch_is_closed && [[ $(_ver_major) == 560 ]] && _kernel_ge "$(_kernel_triplet)" "6.11.0"; }
-}
-_cond_modeset_default_565() {
-  { _cond_open_565; } || { _patch_is_closed && [[ $(_ver_major) == 565 ]] && _kernel_ge "$(_kernel_triplet)" "6.11.0"; }
 }
 
 _patch_rules_init() {
@@ -240,38 +201,20 @@ _patch_rules_init() {
   }
 
   _patch_rule_add "390-kernel-7.0.patch" "." 1 _cond_major_390 "serie 390 locale"
-  _patch_rule_add "nvidia-settings-libxnvctrl_so.diff" "." 1 _cond_libxnvctrl "whitelist nvidia-settings: libxnvctrl_patch=true"
-
-  _patch_rule_add "nvidia-open-gcc-ibt-sls.diff" auto 1 _cond_open_lt525 "whitelist open: < 525"
-  _patch_rule_add "Add-IBT-support.diff" auto 1 _cond_open_570 "whitelist open: 570"
   _patch_rule_add "make-modeset-fbdev-default.diff" auto 1 _cond_modeset_default "whitelist: open 550-564 ou closed 560/kernel >= 6.11"
-  _patch_rule_add "make-modeset-fbdev-default-565.diff" auto 1 _cond_modeset_default_565 "whitelist: 565 uniquement"
-  _patch_rule_add "silence-event-assert-until-570.diff" auto 1 _cond_open_565 "whitelist open: 565"
   _patch_rule_add "fix-hdmi-names.diff" auto 1 _cond_open_565 "whitelist open: 565"
-  _patch_rule_add "Enable-atomic-kernel-modesetting-by-default.diff" auto 1 _cond_open_570 "whitelist open: 570"
   _patch_rule_add "0001-Enable-atomic-kernel-modesetting-by-default.diff" auto 1 _cond_open_580_594 "whitelist open: 580-594"
   _patch_rule_add "0002-Add-IBT-support.diff" auto 1 _cond_open_ge580 "whitelist open: >= 580"
   _patch_rule_add "fix-hw-cursor-kde.diff" auto 1 _cond_open_580 "whitelist open: 580"
   _patch_rule_add "nvidia-bsb-dsc-fix.diff" auto 1 _cond_bsb_dsc "whitelist open: >= 580 + bsb_dsc_fix=true"
-
-  _patch_rule_add "linux-version.diff" auto 1 _cond_closed_le455 "whitelist closed: <= 455"
-  _patch_rule_add "455-crashfix.diff" auto 1 _cond_closed_455_crashfix "whitelist closed: 455.2/455.3/455.4"
-  _patch_rule_add "01-ipmi-vm.diff" auto 1 _cond_closed_ipmi_vm1 "whitelist closed: old ipmi/vm + kernel >= 4.20"
-  _patch_rule_add "02-ipmi-vm.diff" auto 1 _cond_closed_ipmi_vm2 "whitelist closed: 410/415 ipmi/vm addon + kernel >= 4.20"
-  _patch_rule_add "list_is_first.diff" auto 1 _cond_closed_list_is_first "whitelist closed: < 418.56 + kernel >= 5.1"
-  _patch_rule_add "legacy-kernel-6.4.diff" auto 1 _cond_closed_470199_k64 "whitelist closed: 470.199 + kernel >= 6.4"
-  _patch_rule_add "legacy-kernel-6.5.diff" auto 1 _cond_closed_470199_k65 "whitelist closed: 470.199 + kernel >= 6.5"
-  _patch_rule_add "legacy-kernel-6.6.diff" auto 1 _cond_closed_470199_k66 "whitelist closed: 470.199 + kernel >= 6.6"
   _patch_rule_add "kernel-6.12.patch" auto 1 _cond_closed_56557_k612 "whitelist closed: 565.57 + kernel >= 6.12"
   _patch_rule_add "kernel-6.17.patch" "" "" _cond_never "whitelist absente dans PKGBUILD.txt pour kernel-6.17.patch"
   _patch_rule_add "kernel-6.19.patch" auto 2 _cond_open_590_k619 "whitelist open: 590 + kernel >= 6.19"
   _patch_rule_add "470-kernel-7.0.patch" kernel-dkms 1 _cond_closed_470xx_k612 "whitelist closed: 470xx + kernel >= 6.12 (cumulative)"
   _patch_rule_add "kernel-7.0.patch" auto 2 _cond_open_590_595_k70 "whitelist open: 590/595 <= 595.58.03 + kernel >= 7.0"
-  _patch_rule_add "kernel-7.0-580.patch" auto 1 _cond_580_k70 "whitelist: 580 <= 580.142 + kernel >= 7.0"
+  _patch_rule_add "580-kernel-7.0.patch" auto 1 _cond_580_k70 "whitelist open: 580 branch (cumulative)"
   _patch_rule_add "kernel-7.1.patch" auto 2 _cond_open_595_k71 "whitelist open: 595 <= 595.58.03 + kernel >= 7.1"
-  _patch_rule_add "gcc-14.diff" auto 1 _cond_gcc14_non470 "whitelist closed: non-470 + GCC 14"
   _patch_rule_add "gcc-15.diff" auto 1 _cond_gcc15 "whitelist: GCC 15"
-  _patch_rule_add "GFP_RETRY_MAYFAIL-test.diff" "" "" _cond_never "whitelist absente dans PKGBUILD.txt pour GFP_RETRY_MAYFAIL-test.diff"
 
   _patch_rules_ready=true
 }
@@ -313,11 +256,6 @@ _patch_plan() {
       [[ $major == 390 ]] && echo "apply|.|1|serie 390 locale" || \
         echo "skip|||whitelist: serie 390 uniquement"
       return ;;
-
-    nvidia-settings-libxnvctrl_so.diff)
-      [[ $libxnvctrl_patch == "true" ]] && echo "apply|.|1|whitelist nvidia-settings: libxnvctrl_patch=true" || \
-        echo "skip|||whitelist nvidia-settings: libxnvctrl_patch=true"
-      return ;;
   esac
 
   # Filtrage par branche du driver quand le patch l'indique explicitement
@@ -330,18 +268,6 @@ _patch_plan() {
   fi
 
   case $p in
-    nvidia-open-gcc-ibt-sls.diff)
-      [[ ${has_real_kernel_open:-false} == "true" && $nvidia_open == "true" && $major -lt 525 ]] && \
-        echo "apply|auto|1|whitelist open: < 525" || \
-        echo "skip|||whitelist open: < 525"
-      return ;;
-
-    Add-IBT-support.diff)
-      [[ ${has_real_kernel_open:-false} == "true" && $nvidia_open == "true" && $major == 570 ]] && \
-        echo "apply|auto|1|whitelist open: 570" || \
-        echo "skip|||whitelist open: 570"
-      return ;;
-
     make-modeset-fbdev-default.diff)
       if [[ ${has_real_kernel_open:-false} == "true" && $nvidia_open == "true" && $major -ge 550 && $major -lt 565 ]]; then
         echo "apply|auto|1|whitelist open: 550-564"
@@ -352,26 +278,10 @@ _patch_plan() {
       fi
       return ;;
 
-    make-modeset-fbdev-default-565.diff)
-      if [[ ${has_real_kernel_open:-false} == "true" && $nvidia_open == "true" && $major == 565 ]]; then
-        echo "apply|auto|1|whitelist open: 565"
-      elif [[ $nvidia_open == "false" && $major == 565 ]] && _kernel_ge "$running_kernel" "6.11.0"; then
-        echo "apply|auto|1|whitelist closed: 565 + kernel >= 6.11"
-      else
-        echo "skip|||whitelist: 565 uniquement"
-      fi
-      return ;;
-
-    silence-event-assert-until-570.diff|fix-hdmi-names.diff)
+    fix-hdmi-names.diff)
       [[ ${has_real_kernel_open:-false} == "true" && $nvidia_open == "true" && $major == 565 ]] && \
         echo "apply|auto|1|whitelist open: 565" || \
         echo "skip|||whitelist open: 565"
-      return ;;
-
-    Enable-atomic-kernel-modesetting-by-default.diff)
-      [[ ${has_real_kernel_open:-false} == "true" && $nvidia_open == "true" && $major == 570 ]] && \
-        echo "apply|auto|1|whitelist open: 570" || \
-        echo "skip|||whitelist open: 570"
       return ;;
 
     0001-Enable-atomic-kernel-modesetting-by-default.diff)
@@ -400,54 +310,6 @@ _patch_plan() {
   esac
 
   case $p in
-    linux-version.diff)
-      [[ $nvidia_open == "false" && $major -le 455 ]] && \
-        echo "apply|auto|1|whitelist closed: <= 455" || \
-        echo "skip|||whitelist closed: <= 455"
-      return ;;
-
-    455-crashfix.diff)
-      [[ $nvidia_open == "false" ]] && _driver_matches "455.2*" "455.3*" "455.4*" && \
-        echo "apply|auto|1|whitelist closed: 455.2/455.3/455.4" || \
-        echo "skip|||whitelist closed: 455.2/455.3/455.4"
-      return ;;
-
-    01-ipmi-vm.diff)
-      [[ $nvidia_open == "false" ]] && _driver_matches "396*" "410.5*" "410.6*" "410.7*" "415.1*" && _kernel_ge "$running_kernel" "4.20.0" && \
-        echo "apply|auto|1|whitelist closed: old ipmi/vm + kernel >= 4.20" || \
-        echo "skip|||whitelist closed: old ipmi/vm + kernel >= 4.20"
-      return ;;
-
-    02-ipmi-vm.diff)
-      [[ $nvidia_open == "false" ]] && _driver_matches "410.5*" "410.6*" "410.7*" "415.1*" && _kernel_ge "$running_kernel" "4.20.0" && \
-        echo "apply|auto|1|whitelist closed: 410/415 ipmi/vm addon + kernel >= 4.20" || \
-        echo "skip|||whitelist closed: 410/415 ipmi/vm addon + kernel >= 4.20"
-      return ;;
-
-    list_is_first.diff)
-      [[ $nvidia_open == "false" ]] && _driver_matches "396*" "410*" "415*" "418.3*" "418.4*" && _kernel_ge "$running_kernel" "5.1.0" && \
-        echo "apply|auto|1|whitelist closed: < 418.56 + kernel >= 5.1" || \
-        echo "skip|||whitelist closed: < 418.56 + kernel >= 5.1"
-      return ;;
-
-    legacy-kernel-6.4.diff)
-      [[ $nvidia_open == "false" ]] && _driver_matches "470.199*" && _kernel_ge "$running_kernel" "6.4.0" && \
-        echo "apply|auto|1|whitelist closed: 470.199 + kernel >= 6.4" || \
-        echo "skip|||whitelist closed: 470.199 + kernel >= 6.4"
-      return ;;
-
-    legacy-kernel-6.5.diff)
-      [[ $nvidia_open == "false" ]] && _driver_matches "470.199*" && _kernel_ge "$running_kernel" "6.5.0" && \
-        echo "apply|auto|1|whitelist closed: 470.199 + kernel >= 6.5" || \
-        echo "skip|||whitelist closed: 470.199 + kernel >= 6.5"
-      return ;;
-
-    legacy-kernel-6.6.diff)
-      [[ $nvidia_open == "false" ]] && _driver_matches "470.199*" && _kernel_ge "$running_kernel" "6.6.0" && \
-        echo "apply|auto|1|whitelist closed: 470.199 + kernel >= 6.6" || \
-        echo "skip|||whitelist closed: 470.199 + kernel >= 6.6"
-      return ;;
-
     kernel-6.12.patch)
       [[ $nvidia_open == "false" ]] && _driver_matches "565.57*" && _kernel_ge "$running_kernel" "6.12.0" && \
         echo "apply|auto|1|whitelist closed: 565.57 + kernel >= 6.12" || \
@@ -472,13 +334,11 @@ _patch_plan() {
       fi
       return ;;
 
-    kernel-7.0-580.patch)
-      if [[ $major == 580 ]] && _kernel_ge "$running_kernel" "7.0.0" && _ver_le "$pkgver" "580.142"; then
-        [[ ${has_real_kernel_open:-false} == "true" && $nvidia_open == "true" ]] && \
-          echo "apply|auto|1|whitelist open: 580 <= 580.142 + kernel >= 7.0" || \
-          echo "apply|auto|1|whitelist closed: 580 <= 580.142 + kernel >= 7.0"
+    580-kernel-7.0.patch)
+      if [[ ${has_real_kernel_open:-false} == "true" && $nvidia_open == "true" && $major == 580 ]]; then
+        echo "apply|auto|1|whitelist open: 580 branch (cumulative)"
       else
-        echo "skip|||whitelist: 580 <= 580.142 + kernel >= 7.0"
+        echo "skip|||whitelist open: 580 branch (cumulative)"
       fi
       return ;;
 
@@ -490,19 +350,9 @@ _patch_plan() {
       fi
       return ;;
 
-    gcc-14.diff)
-      [[ $nvidia_open == "false" && $major != 470 && $(_gcc_major) == 14 ]] && \
-        echo "apply|auto|1|whitelist closed: non-470 + GCC 14" || \
-        echo "skip|||whitelist closed: non-470 + GCC 14"
-      return ;;
-
     gcc-15.diff)
       [[ $(_gcc_major) == 15 ]] && echo "apply|auto|1|whitelist: GCC 15" || \
         echo "skip|||whitelist: GCC 15"
-      return ;;
-
-    GFP_RETRY_MAYFAIL-test.diff)
-      echo "skip|||whitelist absente dans PKGBUILD.txt pour GFP_RETRY_MAYFAIL-test.diff"
       return ;;
   esac
 
