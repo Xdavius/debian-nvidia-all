@@ -1,10 +1,16 @@
 [package]
 name = "debian-nvidia-all-gui"
-version = "0.1.0"
-edition = "2021"
+version = "0.1.4"
+edition = "2026"
 
 [dependencies]
 slint = { version = "=1.7.2", default-features = false, features = ["std", "backend-winit", "renderer-femtovg", "renderer-software", "compat-1-2"] }
 
 [build-dependencies]
 slint-build = "=1.7.2"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = 3
