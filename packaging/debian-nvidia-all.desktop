@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Debian NVIDIA All
+Comment=Bootstrap launcher for Debian NVIDIA Driver Run
+Exec=/usr/bin/debian-nvidia-all
+Icon=/usr/share/icons/hicolor/256x256/apps/debian-nvidia-all.png
+Terminal=false
+Categories=System;Utility;
+StartupNotify=true
