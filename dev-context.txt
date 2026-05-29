@@ -2,6 +2,7 @@
 
 Ce document sert de mémoire de projet pour éviter les régressions lors des évolutions GUI, TUI et CLI.
 Il est volontairement détaillé.
+Dernière mise à jour: 2026-05-29 (audit rapide du repo local).
 
 ## 1) Architecture actuelle (source de vérité)
 - Backend métier unique: `debian-nvidia-all-cli.sh`
@@ -24,6 +25,7 @@ Responsabilités:
 - Sélection runfile local ou en ligne.
 - Génération pacscript final + exécution `pacstall`.
 - Exposition d'API "machine-readable" consommables par TUI/GUI.
+- Filtrage GPU optionnel via `--gpu <modele>` pour la sélection de version online.
 
 Fonctions importantes:
 - `run_as_root`:
@@ -113,6 +115,7 @@ Options importantes utilisées par TUI/GUI:
 - `--source <local|online>`
 - `--branch <latest|recommended|stable|feature|beta|legacy|all>`
 - `--version <x.y.z>`
+- `--gpu <modele>`
 - `--runfile <fichier>`
 - `--nvidia-open <true|false>`
 - `--action <1|2|3>`
@@ -174,6 +177,10 @@ Format texte clé=valeur (utilisé GUI):
 - `LATEST_SUPPORT=`
 - `DETECTED_GPU=`
 
+Cas d'erreur à gérer côté front:
+- `ERROR=Network` (aucun miroir/version récupérable)
+- `ERROR=NoVersions` (source répond mais aucune version exploitable)
+
 ### 5.3 Sortie de `--print-local-runfiles`
 - une ligne par runfile valide (nom de fichier)
 
@@ -218,9 +225,34 @@ Format texte clé=valeur (utilisé GUI):
 - Ajout mode test GUI: `NVIDIA_GUI_TEST_MISSING_DEPS` pour valider le pop-up dépendances.
 - Fix freeze GUI lors de resize/minimize/restore:
   - solution: préférer `SLINT_BACKEND=winit-femtovg` par défaut dans `src/main.rs`
+  - fallback auto: `winit-software` si backend X11 indisponible
+
+## 10) Journal de dev (à maintenir)
+
+Règle:
+- Ajouter une entrée datée à chaque session de dev avec:
+  - objectif
+  - changements faits
+  - vérifications exécutées
+  - points ouverts
+
+### 2026-05-29
+- Objectif:
+  - Réaligner ce fichier sur l'état réel du projet et démarrer un journal de dev.
+- Changements faits:
+  - Ajout de l'option CLI `--gpu` dans le contrat public.
+  - Ajout des cas d'erreur `--print-versions` (`ERROR=Network`, `ERROR=NoVersions`).
+  - Mise à jour note GUI sur le fallback `SLINT_BACKEND` (`winit-femtovg` puis `winit-software`).
+  - Ajout de cette section "Journal de dev".
+- Vérifications exécutées:
+  - `bash debian-nvidia-all-cli.sh --help`
+  - `bash debian-nvidia-all-cli.sh --inspect-dependencies`
+  - lecture ciblée de `src/main.rs`, `debian-nvidia-all-tui.sh`, `debian-nvidia-all-cli.sh`
+- Points ouverts:
+  - `--print-versions` dépend du réseau et renvoie actuellement `ERROR=Network` dans cet environnement.
   - fallback de sécurité conservé vers `winit-software` si création UI impossible.
 
-## 10) Mémo debug (variables d'env)
+## 11) Mémo debug (variables d'env)
 
 ### GUI
 - `NVIDIA_GUI_HELPER=/chemin/vers/debian-nvidia-all-cli.sh`

@@ -17,7 +17,7 @@
 # nvidia-driver-run-config.sh ou directement via l'environnement:
 #   pkgver=390.157 nvidia_open=false pacstall -IB ./nvidia-driver-run.pacscript
 
-pkgver="${pkgver:-580.159.03}"
+pkgver="${pkgver:-610.43.02}"
 patch_relaxed="${patch_relaxed:-${PATCH_RELAXED:-true}}"
 libxnvctrl_patch="${libxnvctrl_patch:-${LIBXNVCTRL_PATCH:-false}}"
 
