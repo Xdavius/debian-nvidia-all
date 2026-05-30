@@ -2,7 +2,7 @@
 
 Ce document sert de mémoire de projet pour éviter les régressions lors des évolutions GUI, TUI et CLI.
 Il est volontairement détaillé.
-Dernière mise à jour: 2026-05-29 (point d'étape bootstrap + TODO).
+Dernière mise à jour: 2026-05-30 (point d'étape bootstrap 1.0.0 + validation isolée).
 
 ## 1) Architecture actuelle (source de vérité)
 - Backend métier unique: `debian-nvidia-all-cli.sh`
@@ -305,6 +305,49 @@ Règle:
   - ajouter vérification d'intégrité (checksum/signature) des assets release dans le bootstrap
   - ajouter rollback bootstrap en cas d'update invalide
   - décider si la CLI principale migre aussi ses chemins runtime vers XDG (hors bootstrap)
+
+### 2026-05-30 (bootstrap 1.0.0 + cleanup)
+- Objectif:
+  - Finaliser le bootstrap simple/stable, aligner les noms projet, et valider les scénarios critiques.
+- Changements faits:
+  - Bootstrap `packaging/debian-nvidia-all`:
+    - suppression de `XDG_CACHE_HOME` et `XDG_STATE_HOME` (runtime uniquement `XDG_DATA_HOME/debian-nvidia-all`)
+    - ajout vérification SHA256 via `packaging/release-sha256.txt` (url raw GitHub configurable)
+    - ajout rollback local simple en cas d'update invalide
+    - ajout `--check-updates` (lecture seule):
+      - sortie: `CURRENT_VERSION=`, `LATEST_VERSION=`, `UPDATE_AVAILABLE=true|false`
+      - codes retour: `0` (à jour), `10` (update dispo), `2` (erreur metadata)
+    - `--apply-updates` non ajouté: l'équivalent fonctionnel existe déjà via `--update-only`.
+    - ajout journal local des updates: `XDG_DATA_HOME/debian-nvidia-all/bootstrap-updates.log`
+  - Build release:
+    - `build-release.sh` génère/met à jour `packaging/release-sha256.txt`
+    - archive renommée `debian-nvidia-all-<version>.tar.gz`
+    - retrait du bootstrap du contenu `tar.gz` (GUI/CLI/TUI + pacscript uniquement)
+  - Packaging:
+    - renommage/alignment `nvidia-*` -> `debian-*` côté packaging actif
+    - dépendances bootstrap complétées dans `packaging/debian-nvidia-all.pacscript`:
+      - `awk`, `bash`, `ca-certificates`, `coreutils`, `curl`, `findutils`, `grep`, `gzip`, `jq`, `tar`, `util-linux`, `xdg-utils`
+  - Versioning:
+    - bump `1.0.0` dans `Cargo.toml` et `packaging/debian-nvidia-all.pacscript`
+  - Documentation:
+    - `README.md` refondu orienté débutants:
+      - `.deb` = installation recommandée + mises à jour automatiques
+      - `tar.gz` = version autonome/avancée
+      - ton en vouvoiement
+      - ajout résumé branches/cartes et mention "Recommandé" (canal stable par défaut)
+    - `todo.txt` nettoyé et réaligné sur le scope simplifié.
+- Vérifications exécutées:
+  - `bash -n packaging/debian-nvidia-all`
+  - `bash -n build-release.sh`
+  - tests isolés dans `/tmp/debian-nvidia-all-bootstrap-tests`:
+    - update nominal checksum OK: PASS
+    - checksum KO: PASS
+    - archive invalide + rollback: PASS
+    - offline fallback sur version installée: PASS
+    - lancement "style /usr/bin" en simulation `/tmp/fake-usr-bin`: PASS
+- Points ouverts:
+  - confirmer le test `/usr/bin` sur installation paquet réelle (pas seulement simulation)
+  - si besoin futur: ajouter alias explicite `--apply-updates` pour ergonomie CLI (non bloquant)
 
 ## 11) Mémo debug (variables d'env)
 

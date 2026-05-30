@@ -8,7 +8,6 @@ CARGO_TOML="${ROOT_DIR}/Cargo.toml"
 GUI_BIN_SRC="${ROOT_DIR}/target/release/debian-nvidia-all-gui"
 CLI_SRC="${ROOT_DIR}/debian-nvidia-all-cli.sh"
 TUI_SRC="${ROOT_DIR}/debian-nvidia-all-tui.sh"
-BOOTSTRAP_SRC="${ROOT_DIR}/packaging/debian-nvidia-all"
 PACSCRIPT_SRC="${ROOT_DIR}/pacscript"
 CHECKSUM_FILE="${ROOT_DIR}/packaging/release-sha256.txt"
 
@@ -46,10 +45,6 @@ if [[ ! -f "${TUI_SRC}" ]]; then
   echo "ERROR: TUI script not found: ${TUI_SRC}" >&2
   exit 1
 fi
-if [[ ! -f "${BOOTSTRAP_SRC}" ]]; then
-  echo "ERROR: bootstrap script not found: ${BOOTSTRAP_SRC}" >&2
-  exit 1
-fi
 if [[ ! -d "${PACSCRIPT_SRC}" ]]; then
   echo "ERROR: pacscript directory not found: ${PACSCRIPT_SRC}" >&2
   exit 1
@@ -58,10 +53,9 @@ fi
 cp -f -- "${GUI_BIN_SRC}" "${RELEASE_DIR}/debian-nvidia-all-gui"
 cp -f -- "${CLI_SRC}" "${RELEASE_DIR}/debian-nvidia-all-cli.sh"
 cp -f -- "${TUI_SRC}" "${RELEASE_DIR}/debian-nvidia-all-tui.sh"
-cp -f -- "${BOOTSTRAP_SRC}" "${RELEASE_DIR}/debian-nvidia-all"
 cp -a -- "${PACSCRIPT_SRC}" "${RELEASE_DIR}/pacscript"
 
-chmod +x "${RELEASE_DIR}/debian-nvidia-all-gui" "${RELEASE_DIR}/debian-nvidia-all-cli.sh" "${RELEASE_DIR}/debian-nvidia-all-tui.sh" "${RELEASE_DIR}/debian-nvidia-all"
+chmod +x "${RELEASE_DIR}/debian-nvidia-all-gui" "${RELEASE_DIR}/debian-nvidia-all-cli.sh" "${RELEASE_DIR}/debian-nvidia-all-tui.sh"
 
 printf '[4/5] Create tar.gz archive...\n'
 rm -f -- "${ARCHIVE_PATH}"
