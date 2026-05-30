@@ -1,90 +1,34 @@
-# TODO - Bootstrap Packaging (strategie actuelle)
+# TODO - Bootstrap Packaging (version simplifiee)
 
-## Objectif global
-Livrer un paquet bootstrap minimal et fiable qui installe/maintient l'app en espace utilisateur (XDG),
-avec mises à jour sûres et comportement prévisible.
+## Decision de scope (active)
+- Canal stable: `releases/latest` GitHub.
+- Update unitaire: on met a jour toute la release `tar.gz` (pas de moteur de patch incrémental).
+- Runtime uniquement en `XDG_DATA_HOME/debian-nvidia-all` (pas de `XDG_CACHE_HOME`, pas de `XDG_STATE_HOME`).
 
-## 1) Séparer clairement code applicatif et données runtime
-- [x] Créer un dossier runtime dédié (choix retenu: XDG user-space via bootstrap).
-- [x] Interdire les écritures dans le dossier du projet installé (`/usr/share/...`).
-- Note: stratégie bootstrap active: écritures uniquement en XDG user-space, pas d'usage runtime de `/usr/share` ni `/var/lib`.
-- [x] Déplacer le stockage des `.run` téléchargés vers ce dossier runtime.
-- Note: stratégie retenue côté bootstrap: pas de conservation durable des `.run`; purge silencieuse des résiduels dans `XDG_DATA_HOME/.../pacscript` à chaque lancement.
-- [x] Ajouter une variable d'env de surcharge pour dev/test (bootstrap: `NVIDIA_BOOTSTRAP_REPO`, `NVIDIA_BOOTSTRAP_RELEASE_API_URL`).
-- [x] Interdire le lancement du bootstrap en root (sécurité et cohérence du mode user-space).
+## 1) Ce qui est deja fait
+- [x] Launcher bootstrap en place: `packaging/nvidia-debian-all`.
+- [x] Packaging bootstrap en place (`.desktop`, pacscript bootstrap, artefacts `packaging/`).
+- [x] Build release locale (`RELEASE/` + `nvidia-debian-all-{version}.tar.gz`).
+- [x] Exclusion des `.run` des archives et purge silencieuse des residuels au lancement.
+- [x] Verification SHA256 du `tar.gz` via `packaging/release-sha256.txt`.
+- [x] Rollback simple vers la version precedente en cas d'update invalide.
+- [x] Ecritures runtime uniquement en user-space (`XDG_DATA_HOME`), interdiction du mode root.
 
-## 2) Repenser le rôle de `pacscript/` avec bootstrap
-- [ ] Décider ce qui est immuable (packagé) vs mutable (généré/téléchargé).
-- [ ] Garder les patches de base en lecture seule dans le paquet.
-- [ ] Copier les artefacts nécessaires vers runtime avant build (si modification requise).
-- [ ] Éliminer toute dépendance à des chemins relatifs au repo en production.
+## 2) Reste a faire (prioritaire)
+- [ ] Implementer `--check-updates` (lecture seule): comparer version locale vs `latest`, retourner un statut clair.
+- [ ] Implementer `--apply-updates` (ecriture): appliquer explicitement l'update sans lancer la GUI.
+- [ ] Ajouter un log local minimal des updates bootstrap (date, version cible, succes/echec, rollback oui/non).
 
-## 3) Introduire une couche de configuration de chemins
-- [ ] Ajouter une résolution centralisée des chemins (CLI principale):
-  - dossier patches packagés
-  - dossier runtime
-  - dossier cache téléchargements
-  - fichier d'état local
-- [~] Exposer ces chemins en mode debug (`--print-paths`) pour diagnostic.
-- Note: fait dans le bootstrap, restant à faire dans la CLI principale.
-- [ ] Faire consommer la même logique de chemins à TUI/GUI via la CLI uniquement.
+## 3) Reste a valider (tests)
+- [ ] Test update online nominal (checksum OK).
+- [ ] Test update invalide (checksum KO) avec rollback effectif.
+- [ ] Test comportement offline (fallback sur version installee).
+- [ ] Test lancement depuis `/usr/bin` et support de `NVIDIA_GUI_HELPER`.
 
-## 4) Stratégie d'auto-update (patches + pacscript)
-- [ ] Définir la source officielle des updates (tag/release/signature/checksum).
-- [ ] Ajouter un manifeste versionné (ex: `manifest.json`) avec versions + SHA256.
-- [ ] Implémenter `--check-updates` (lecture seule) et `--apply-updates` (écriture runtime).
-- [ ] Ne jamais modifier les fichiers packagés; appliquer les updates uniquement en runtime.
-- [ ] Prévoir un rollback simple (conserver la dernière version valide).
+## 4) Documentation
+- [ ] Mettre a jour `README.md` (politique update bootstrap + chemins runtime).
+- [ ] Finaliser `dev-context.txt` avec ce scope simplifie.
 
-## 5) Durcir la sécurité des updates
-- [ ] Vérifier intégrité (SHA256) de chaque patch/pacscript téléchargé.
-- [ ] Ajouter timeout/réessais/reprise sur erreur réseau.
-- [ ] Refuser l'application partielle d'un lot d'update.
-- [ ] Journaliser les opérations d'update dans un log local lisible.
-
-## 6) Packaging Bootstrap (avancement actuel)
-- [x] Créer un launcher bootstrap `packaging/nvidia-debian-all`.
-- [x] Créer un `.desktop` bootstrap `packaging/debian-nvidia-all.desktop`.
-- [x] Créer un pacscript bootstrap `packaging/nvidia-debian-all-bootstrap.pacscript`.
-- [x] Structurer les artefacts packaging dans `packaging/`.
-- [x] Produire une release locale `RELEASE/` + `nvidia-debian-all-{version}.tar.gz`.
-- [x] Exclure les `.run` des archives `tar.gz`.
-- [x] Simplifier le bootstrap en installation non versionnée dans `XDG_DATA_HOME/debian-nvidia-all`.
-- [x] Purger silencieusement les `.run` résiduels à chaque lancement bootstrap.
-- [ ] Vérifier checksum/signature des assets GitHub Release dans le bootstrap.
-- [ ] Ajouter rollback bootstrap (version précédente) en cas d'update invalide.
-- [ ] Relier le bootstrap à un canal stable explicite (pas uniquement `releases/latest`).
-
-## 6.b) Packaging Debian strict (optionnel / plus tard)
-- [ ] Créer la structure Debian (`debian/`) si nécessaire (control, rules, install, postinst...).
-- [ ] Ajouter les dépendances runtime/build dans `debian/control`.
-- [ ] Générer le paquet via `dpkg-buildpackage` sans dépendre du repo git local.
-
-## 7) Corriger les comportements bloquants actuels
-- [ ] Retirer le téléchargement `.run` dans `pacscript/` (écrire en runtime/cache).
-- [ ] Vérifier que la génération de pacscript final se fait dans un emplacement writable.
-- [ ] Vérifier que la GUI fonctionne quand lancée depuis `/usr/bin`.
-- [ ] Vérifier que `NVIDIA_GUI_HELPER` reste supporté pour debug.
-
-## 8) Tests de non-régression
-- [ ] Tests CLI:
-  - `--inspect-dependencies`
-  - `--print-versions`
-  - `--print-local-runfiles`
-  - flux online/local complet
-- [ ] Test installation depuis `.deb` sur système propre.
-- [ ] Test update offline/online + rollback.
-- [ ] Test permissions (user standard, élévation root au bon moment).
-
-## 9) Documentation à mettre à jour
-- [ ] Mettre à jour `README.md` (chemins, runtime, update policy + mode bootstrap).
-- [ ] Documenter le modèle immuable (paquet) / mutable (runtime).
-- [ ] Ajouter une section dépannage packaging Debian.
-- [~] Mettre à jour `dev-context.txt` avec l'architecture cible finale.
-- Note: journal mis à jour; architecture finale encore à figer.
-
-## 10) Critères de validation finale
-- [ ] Le paquet bootstrap (`.deb`) se construit sur machine propre sans bricolage local.
-- [ ] Aucune écriture dans les fichiers installés par le paquet.
-- [ ] Les updates patches/pacscript sont traçables, vérifiées et rollbackables.
-- [ ] CLI/TUI/GUI fonctionnent identiquement en mode dev et en mode paquet installé.
+## 5) Hors scope immediate (plus tard)
+- [ ] Packaging Debian strict complet (`debian/`, `dpkg-buildpackage`) si necessaire.
+- [ ] Moteur d'update fin par patch/pacscript versionne (manifest JSON, lot atomique) seulement si un besoin reel apparait.
