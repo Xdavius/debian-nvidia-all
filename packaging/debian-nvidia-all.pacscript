@@ -1,5 +1,5 @@
 pkgname="debian-nvidia-all"
-pkgver="1.0.0"
+pkgver="1.0.1"
 pkgdesc="Bootstrap launcher for Debian NVIDIA All (self-updating app payload)"
 url="https://github.com/Xdavius/debian-nvidia-all"
 arch=("amd64")
