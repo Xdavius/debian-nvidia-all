@@ -12,4 +12,5 @@ target/
 
 # Local release artifacts
 RELEASE/
-nvidia-debian-all-*.tar.gz
+debian-nvidia-all-*.tar.gz
+*.deb
