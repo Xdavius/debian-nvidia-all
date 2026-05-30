@@ -2,6 +2,7 @@
 
 Ce document sert de mémoire de projet pour éviter les régressions lors des évolutions GUI, TUI et CLI.
 Il est volontairement détaillé.
+Dernière mise à jour: 2026-05-30 (point d'étape bootstrap 1.0.0 + validation isolée).
 
 ## 1) Architecture actuelle (source de vérité)
 - Backend métier unique: `debian-nvidia-all-cli.sh`
@@ -24,6 +25,7 @@ Responsabilités:
 - Sélection runfile local ou en ligne.
 - Génération pacscript final + exécution `pacstall`.
 - Exposition d'API "machine-readable" consommables par TUI/GUI.
+- Filtrage GPU optionnel via `--gpu <modele>` pour la sélection de version online.
 
 Fonctions importantes:
 - `run_as_root`:
@@ -113,6 +115,7 @@ Options importantes utilisées par TUI/GUI:
 - `--source <local|online>`
 - `--branch <latest|recommended|stable|feature|beta|legacy|all>`
 - `--version <x.y.z>`
+- `--gpu <modele>`
 - `--runfile <fichier>`
 - `--nvidia-open <true|false>`
 - `--action <1|2|3>`
@@ -174,6 +177,10 @@ Format texte clé=valeur (utilisé GUI):
 - `LATEST_SUPPORT=`
 - `DETECTED_GPU=`
 
+Cas d'erreur à gérer côté front:
+- `ERROR=Network` (aucun miroir/version récupérable)
+- `ERROR=NoVersions` (source répond mais aucune version exploitable)
+
 ### 5.3 Sortie de `--print-local-runfiles`
 - une ligne par runfile valide (nom de fichier)
 
@@ -218,9 +225,131 @@ Format texte clé=valeur (utilisé GUI):
 - Ajout mode test GUI: `NVIDIA_GUI_TEST_MISSING_DEPS` pour valider le pop-up dépendances.
 - Fix freeze GUI lors de resize/minimize/restore:
   - solution: préférer `SLINT_BACKEND=winit-femtovg` par défaut dans `src/main.rs`
+  - fallback auto: `winit-software` si backend X11 indisponible
+
+## 10) Journal de dev (à maintenir)
+
+Règle:
+- Ajouter une entrée datée à chaque session de dev avec:
+  - objectif
+  - changements faits
+  - vérifications exécutées
+  - points ouverts
+
+### 2026-05-29
+- Objectif:
+  - Réaligner ce fichier sur l'état réel du projet et démarrer un journal de dev.
+- Changements faits:
+  - Ajout de l'option CLI `--gpu` dans le contrat public.
+  - Ajout des cas d'erreur `--print-versions` (`ERROR=Network`, `ERROR=NoVersions`).
+  - Mise à jour note GUI sur le fallback `SLINT_BACKEND` (`winit-femtovg` puis `winit-software`).
+  - Ajout de cette section "Journal de dev".
+- Vérifications exécutées:
+  - `bash debian-nvidia-all-cli.sh --help`
+  - `bash debian-nvidia-all-cli.sh --inspect-dependencies`
+  - lecture ciblée de `src/main.rs`, `debian-nvidia-all-tui.sh`, `debian-nvidia-all-cli.sh`
+- Points ouverts:
+  - `--print-versions` dépend du réseau et renvoie actuellement `ERROR=Network` dans cet environnement.
   - fallback de sécurité conservé vers `winit-software` si création UI impossible.
 
-## 10) Mémo debug (variables d'env)
+### 2026-05-29 (suite)
+- Objectif:
+  - Formaliser un plan de remédiation pour rendre le projet packagable en `.deb`.
+- Changements faits:
+  - Création de `todo.txt` avec un plan de tâches en 10 blocs:
+    - séparation immutable/mutable
+    - runtime/cache dédiés
+    - stratégie d'auto-update patch/pacscript
+    - sécurité/rollback
+    - packaging Debian
+    - tests et documentation
+- Vérifications exécutées:
+  - confirmation de l'absence initiale de `todo.txt`
+- Points ouverts:
+  - arbitrer le chemin runtime final (`/var/lib/...` vs `$XDG_STATE_HOME/...`)
+  - choisir le format de manifeste d'update et la politique de signature
+
+### 2026-05-29 (suite packaging bootstrap)
+- Objectif:
+  - Structurer les artefacts de packaging bootstrap dans un dossier dédié.
+- Changements faits:
+  - Création du dossier `packaging/`.
+  - Déplacement de:
+    - `nvidia-debian-all` -> `packaging/nvidia-debian-all`
+    - `debian-nvidia-all.desktop` -> `packaging/debian-nvidia-all.desktop`
+  - Ajout de `packaging/nvidia-debian-all-bootstrap.pacscript` pour le paquet bootstrap.
+  - Mise à jour de `build-release.sh` pour copier le bootstrap depuis `packaging/`.
+- Vérifications exécutées:
+  - `./build-release.sh`
+  - vérification du contenu `RELEASE/` (bootstrap bien présent)
+- Points ouverts:
+  - automatiser la synchronisation de `pkgver` du pacscript avec `Cargo.toml`
+
+### 2026-05-29 (suite bootstrap simplifie)
+- Objectif:
+  - Simplifier le bootstrap (installation non versionnée) et clarifier la politique `.run`.
+- Changements faits:
+  - Bootstrap déplacé en mode installation directe dans `XDG_DATA_HOME/debian-nvidia-all` (suppression logique `releases/current`).
+  - Ajout d'un état version minimale via `installed-version` dans `XDG_STATE_HOME/debian-nvidia-all`.
+  - Ajout d'un nettoyage silencieux des `.run` résiduels dans `APP_DATA_DIR/pacscript` à chaque lancement bootstrap.
+  - Packaging consolidé sous `packaging/`:
+    - `packaging/nvidia-debian-all`
+    - `packaging/debian-nvidia-all.desktop`
+    - `packaging/nvidia-debian-all-bootstrap.pacscript`
+  - Icône packaging alignée sur `packaging/debian-nvidia-all.png` (quand fournie).
+- Vérifications exécutées:
+  - `bash -n packaging/nvidia-debian-all`
+  - `packaging/nvidia-debian-all --print-paths`
+  - `./build-release.sh` + vérification contenu `RELEASE/` et archive `.tar.gz`
+- Points ouverts:
+  - ajouter vérification d'intégrité (checksum/signature) des assets release dans le bootstrap
+  - ajouter rollback bootstrap en cas d'update invalide
+  - décider si la CLI principale migre aussi ses chemins runtime vers XDG (hors bootstrap)
+
+### 2026-05-30 (bootstrap 1.0.0 + cleanup)
+- Objectif:
+  - Finaliser le bootstrap simple/stable, aligner les noms projet, et valider les scénarios critiques.
+- Changements faits:
+  - Bootstrap `packaging/debian-nvidia-all`:
+    - suppression de `XDG_CACHE_HOME` et `XDG_STATE_HOME` (runtime uniquement `XDG_DATA_HOME/debian-nvidia-all`)
+    - ajout vérification SHA256 via `packaging/release-sha256.txt` (url raw GitHub configurable)
+    - ajout rollback local simple en cas d'update invalide
+    - ajout `--check-updates` (lecture seule):
+      - sortie: `CURRENT_VERSION=`, `LATEST_VERSION=`, `UPDATE_AVAILABLE=true|false`
+      - codes retour: `0` (à jour), `10` (update dispo), `2` (erreur metadata)
+    - `--apply-updates` non ajouté: l'équivalent fonctionnel existe déjà via `--update-only`.
+    - ajout journal local des updates: `XDG_DATA_HOME/debian-nvidia-all/bootstrap-updates.log`
+  - Build release:
+    - `build-release.sh` génère/met à jour `packaging/release-sha256.txt`
+    - archive renommée `debian-nvidia-all-<version>.tar.gz`
+    - retrait du bootstrap du contenu `tar.gz` (GUI/CLI/TUI + pacscript uniquement)
+  - Packaging:
+    - renommage/alignment `nvidia-*` -> `debian-*` côté packaging actif
+    - dépendances bootstrap complétées dans `packaging/debian-nvidia-all.pacscript`:
+      - `awk`, `bash`, `ca-certificates`, `coreutils`, `curl`, `findutils`, `grep`, `gzip`, `jq`, `tar`, `util-linux`, `xdg-utils`
+  - Versioning:
+    - bump `1.0.0` dans `Cargo.toml` et `packaging/debian-nvidia-all.pacscript`
+  - Documentation:
+    - `README.md` refondu orienté débutants:
+      - `.deb` = installation recommandée + mises à jour automatiques
+      - `tar.gz` = version autonome/avancée
+      - ton en vouvoiement
+      - ajout résumé branches/cartes et mention "Recommandé" (canal stable par défaut)
+    - `todo.txt` nettoyé et réaligné sur le scope simplifié.
+- Vérifications exécutées:
+  - `bash -n packaging/debian-nvidia-all`
+  - `bash -n build-release.sh`
+  - tests isolés dans `/tmp/debian-nvidia-all-bootstrap-tests`:
+    - update nominal checksum OK: PASS
+    - checksum KO: PASS
+    - archive invalide + rollback: PASS
+    - offline fallback sur version installée: PASS
+    - lancement "style /usr/bin" en simulation `/tmp/fake-usr-bin`: PASS
+- Points ouverts:
+  - confirmer le test `/usr/bin` sur installation paquet réelle (pas seulement simulation)
+  - si besoin futur: ajouter alias explicite `--apply-updates` pour ergonomie CLI (non bloquant)
+
+## 11) Mémo debug (variables d'env)
 
 ### GUI
 - `NVIDIA_GUI_HELPER=/chemin/vers/debian-nvidia-all-cli.sh`

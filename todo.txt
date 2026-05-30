@@ -1,0 +1,35 @@
+# TODO - Bootstrap Packaging (version simplifiee)
+
+## Decision de scope (active)
+- Canal stable: `releases/latest` GitHub.
+- Update unitaire: on met a jour toute la release `tar.gz` (pas de moteur de patch incrémental).
+- Runtime uniquement en `XDG_DATA_HOME/debian-nvidia-all` (pas de `XDG_CACHE_HOME`, pas de `XDG_STATE_HOME`).
+
+## 1) Ce qui est deja fait
+- [x] Launcher bootstrap en place: `packaging/debian-nvidia-all`.
+- [x] Packaging bootstrap en place (`.desktop`, pacscript bootstrap, artefacts `packaging/`).
+- [x] Build release locale (`RELEASE/` + `debian-nvidia-all-{version}.tar.gz`).
+- [x] Exclusion des `.run` des archives et purge silencieuse des residuels au lancement.
+- [x] Verification SHA256 du `tar.gz` via `packaging/release-sha256.txt`.
+- [x] Rollback simple vers la version precedente en cas d'update invalide.
+- [x] Ecritures runtime uniquement en user-space (`XDG_DATA_HOME`), interdiction du mode root.
+
+## 2) Reste a faire (prioritaire)
+- [x] Implementer `--check-updates` (lecture seule): comparer version locale vs `latest`, retourner un statut clair.
+- [x] Implementer `--apply-updates` (ecriture): deja couvert par `--update-only` (apply sans lancement GUI).
+- [x] Ajouter un log local minimal des updates bootstrap (date, version cible, succes/echec, rollback oui/non).
+
+## 3) Reste a valider (tests)
+- [x] Test update online nominal (checksum OK).
+- [x] Test update invalide (checksum KO) avec rollback effectif.
+- [x] Test comportement offline (fallback sur version installee).
+- [~] Test lancement depuis `/usr/bin`.
+- Note: valide en simulation isolee (`/tmp/fake-usr-bin`), restant a confirmer en installation paquet reelle.
+
+## 4) Documentation
+- [ ] Mettre a jour `README.md` (politique update bootstrap + chemins runtime).
+- [ ] Finaliser `dev-context.txt` avec ce scope simplifie.
+
+## 5) Hors scope immediate (plus tard)
+- [ ] Packaging Debian strict complet (`debian/`, `dpkg-buildpackage`) si necessaire.
+- [ ] Moteur d'update fin par patch/pacscript versionne (manifest JSON, lot atomique) seulement si un besoin reel apparait.

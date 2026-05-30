@@ -9,3 +9,7 @@ pacscript/nvidia-driver-run-*.pacscript
 
 # Rust build output
 target/
+
+# Local release artifacts
+RELEASE/
+nvidia-debian-all-*.tar.gz

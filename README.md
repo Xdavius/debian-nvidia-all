@@ -1,154 +1,90 @@
-# Debian NVIDIA Driver Run (Pacstall)
+# Debian NVIDIA All
 
-Ce projet permet de construire et installer des paquets Debian NVIDIA à partir
-des installateurs officiels `.run`, avec une logique de patch automatique.
+Installer/build helper pour drivers NVIDIA sur Debian, avec interface graphique simple.
 
 ![Capture de la GUI](ui/screenshot.png)
 
-## Pourquoi ce projet
+## Installation recommandee (facile)
 
-Objectif: fournir un flux fiable pour builder/installer les drivers NVIDIA sur Debian,
-avec une UX simple (CLI/TUI/GUI) et une logique backend centralisée.
+Pour la plupart des utilisateurs, prenez le **.deb** dans les GitHub Releases.
 
-## Branches supportées 
+- Installation simple
+- Lanceur integre
+- **Mises a jour automatiques de l'application** au lancement, sans mise à jour du paquet système. (canal stable `latest`)
 
-Il supporte officiellement pour le kernel 6.12 les branches :
-- Latest (Dernière version en date pour les cartes récentes)
-- 580xx  (Dernière version pour les cartes GTX9xx et GTX10xx)
-- 470xx  (Dernière version pour les GTX 600 et GTX 700, ainsi que certaines GTX 800M)
-- 390xx  (Dernière version pour les GTX 400 et GTX 500)
+En bref: si vous voulez "installer et utiliser", choisissez le `.deb`.
 
-Pour les kernels plus récents, il est possible que les patchs ne soient pas à jour.
-- Les builds ont été testé sur le 7.0 TKG LLVM.
-- Les drivers les plus problématiques sont les legacy 390 et 470. Il est recommandée de rester sur un kernel 6.12 pour ces vieux GPU
+## Version complete (avancee)
 
-En cas de problèmes de build, merci d'ouvrir une issue en précisant :
-- le kernel utilisé
-- la version du driver NVIDIA
-- les logs de build
+La version complete autonome est aussi distribuee en **`tar.gz`** dans les Releases.
+
+Ce format est utile si vous voulez:
+
+- utiliser les scripts directement
+- deplacer l'app facilement sans installation systeme
+- faire du debug/dev plus avance
+
+Le `tar.gz` contient notamment:
+
+- `debian-nvidia-all-gui`
+- `debian-nvidia-all-tui.sh`
+- `debian-nvidia-all-cli.sh`
+
+## Ce que fait le projet
+
+Le projet automatise:
+
+- la detection/selection de version NVIDIA
+- la gestion des dependances necessaires
+- la generation/installation via Pacstall
+- l'execution des patchs requis selon la branche driver
+
+## Compatibilite (resume)
+
+Support principal:
+
+- Recommande (canal stable par defaut)
+- Latest (cartes recentes)
+- 580xx
+- 470xx
+- 390xx
+
+Resume cartes supportees:
+
+- Recommande / Latest: GTX serie 16 et RTX
+- 580xx: GTX 900 et GTX 1000
+- 470xx: GTX 600, GTX 700, certaines GTX 800M
+- 390xx: GTX 400 et GTX 500
+
+Note: sur kernels tres recents, certaines branches legacy peuvent demander des patchs plus recents.
 
 ## Modes d'utilisation
 
-- **Easy mode (recommandé)** : GUI Rust/Slint
-  - interface visuelle, guidage simple, logs intégrés
-  - lancement : `cargo run`
+- **GUI (recommande)**: interface graphique
+- **TUI**: assistant terminal
+- **CLI**: mode script/avance
 
-- **Mode avancé** : TUI
-  - assistant terminal avec plus de contrôle explicite
-  - lancement : `bash ./debian-nvidia-all-tui.sh`
+Architecture:
 
-- **Mode expert / scripting** : CLI directe
-  - automatisation, intégration scripts, debug fin
-  - lancement : `bash ./debian-nvidia-all-cli.sh --help`
+- Backend metier unique: `debian-nvidia-all-cli.sh`
+- TUI et GUI utilisent ce backend
 
-Dans tous les cas, le backend métier reste la CLI.
+## Pour les utilisateurs avances
 
-## Releases prébuild
-
-Des builds précompilés sont publiés dans les **GitHub Releases** du projet.
-Si tu ne veux pas compiler la GUI localement, récupère la release correspondant
-à ton système et utilise les binaires/scripts fournis :
-- Pour la GUI : `debian-nvidia-all-gui`
-- Pour la TUI : `debian-nvidia-all-tui.sh`
-- Pour la CLI : `debian-nvidia-all-cli.sh`
-
-## Entrées recommandées
-
-- CLI : `debian-nvidia-all-cli.sh`
-- TUI : `debian-nvidia-all-tui.sh`
-- GUI (Rust/Slint) : `cargo run`
-
-## Architecture actuelle
-
-- **Backend unique** : `debian-nvidia-all-cli.sh` (logique métier et système)
-- **Frontend terminal** : `debian-nvidia-all-tui.sh` (menus, navigation)
-- **Frontend graphique** : `ui/app.slint` + `src/main.rs` (orchestration + logs)
-
-Le TUI et la GUI délèguent le métier au backend CLI.
-
-## Le pacscript et Pacstall
-
-Le coeur du build est le pacscript :
-
-- `pacscript/nvidia-driver-run.pacscript`
-
-Le pacscript contient :
-
-- les dépendances,
-- la logique d’extraction du `.run`,
-- l’application des patchs,
-- la préparation DKMS,
-- la création du paquet.
-
-Ce projet dépend de **Pacstall** pour exécuter ce pacscript et produire le
-paquet Debian final.
-Projet officiel : https://pacstall.dev/
-
-Le script CLI `debian-nvidia-all-cli.sh` gère :
-- la vérification/installation des dépendances (`spdx-licenses`, `pacstall`, outils requis),
-- l’élévation de privilèges (sudo/pkexec + fallback prompts),
-- la sélection runfile local/en ligne,
-- l’exécution finale via Pacstall.
-
-Options CLI utiles :
-- `--check-dependencies`
-- `--inspect-dependencies`
-- `--print-versions`
-- `--print-local-runfiles`
-
-## Interface graphique (GUI Rust/Slint)
-
-La GUI utilise Slint + Rust et pilote le backend shell (`debian-nvidia-all-cli.sh`).
-
-### 1) Installer Rust/Cargo
-
-Copier/coller :
+Exemples:
 
 ```bash
-sudo apt update
-sudo apt install -y cargo
+bash ./debian-nvidia-all-cli.sh --help
+bash ./debian-nvidia-all-tui.sh
 ```
 
-### 2) Optionnel: support XWayland
-
-La GUI tente automatiquement un mode XWayland si possible, avec fallback Wayland natif.
-Ce paquet peut être nécessaire selon l’environnement :
+GUI depuis les artefacts release:
 
 ```bash
-sudo apt install -y libxkbcommon-x11-0
+./debian-nvidia-all-gui
 ```
-
-### 3) Lancer la GUI
-
-Depuis la racine du projet :
-
-```bash
-cargo run
-```
-
-Mode test popup dépendances (simulation) :
-
-```bash
-NVIDIA_GUI_TEST_MISSING_DEPS=1 cargo run
-```
-
-## État actuel (ce qui fonctionne)
-
-- Drivers `580 -> latest` : **OK** sur kernels `6.12 -> 7.0` (GCC/Clang)
-- Driver legacy `470` : **OK** sur kernels `6.12 -> 7.0` (GCC/Clang)
-- Driver legacy `390.157` : **OK** sur kernels `6.12 -> 7.0` (GCC/Clang)
-
-## Notes
-
-- Les patchs actifs sont dans `pacscript/`.
-- Règle actuelle : un patch cumulatif principal par branche NVIDIA.
-- Branche `390` :
-  - patch principal : `pacscript/390-kernel-7.0.patch`
-  - le pacscript force uniquement ce patch pour la branche 390
-- Branche `470` :
-  - patch principal : `pacscript/470-kernel-7.0.patch`
 
 ## Remerciements
 
-- **TKG** et son projet **nvidia-all** pour l'idée initiale et la collection de patchs :
+- TKG / nvidia-all pour l'idee initiale et la base patchs:
   https://github.com/Frogging-Family/nvidia-all

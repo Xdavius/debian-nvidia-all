@@ -1,0 +1,353 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_ID="debian-nvidia-all"
+REPO_DEFAULT="Xdavius/debian-nvidia-all"
+REPO_SLUG="${NVIDIA_BOOTSTRAP_REPO:-$REPO_DEFAULT}"
+RELEASE_API_URL="${NVIDIA_BOOTSTRAP_RELEASE_API_URL:-https://api.github.com/repos/${REPO_SLUG}/releases/latest}"
+CHECKSUM_URL_DEFAULT="https://raw.githubusercontent.com/${REPO_SLUG}/main/packaging/release-sha256.txt"
+RELEASE_CHECKSUM_URL="${NVIDIA_BOOTSTRAP_RELEASE_CHECKSUM_URL:-$CHECKSUM_URL_DEFAULT}"
+
+XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
+
+APP_DATA_DIR="${XDG_DATA_HOME}/${APP_ID}"
+APP_TMP_DIR="${APP_DATA_DIR}/.bootstrap-tmp"
+APP_LOCK_FILE="${APP_DATA_DIR}/bootstrap.lock"
+APP_VERSION_FILE="${APP_DATA_DIR}/installed-version"
+APP_BACKUP_DIR="${APP_TMP_DIR}/rollback-prev"
+APP_UPDATE_LOG_FILE="${APP_DATA_DIR}/bootstrap-updates.log"
+
+APP_GUI_BIN="debian-nvidia-all-gui"
+APP_CLI_BIN="debian-nvidia-all-cli.sh"
+APP_TUI_BIN="debian-nvidia-all-tui.sh"
+APP_BOOTSTRAP_BIN="debian-nvidia-all"
+
+usage() {
+  cat <<USAGE
+Usage: debian-nvidia-all [OPTIONS] [-- GUI_ARGS...]
+
+Bootstrap launcher for Debian NVIDIA All.
+
+Options:
+  --help            Show this help
+  --check-updates   Check if a newer release is available, then exit
+  --update-only     Download/apply latest release, then exit
+  --no-update       Skip network update check and launch installed version
+  --print-paths     Print resolved paths and exit
+
+Env overrides:
+  NVIDIA_BOOTSTRAP_REPO=<owner/repo>
+  NVIDIA_BOOTSTRAP_RELEASE_API_URL=<api url>
+  NVIDIA_BOOTSTRAP_RELEASE_CHECKSUM_URL=<raw checksum url>
+USAGE
+}
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "ERROR: missing required command: $1" >&2
+    exit 1
+  }
+}
+
+require_non_root() {
+  if [[ "${EUID}" -eq 0 ]]; then
+    echo "ERROR: do not run bootstrap as root." >&2
+    echo "Run as a regular user. Elevation is handled later only for system install steps." >&2
+    exit 1
+  fi
+}
+
+ensure_dirs() {
+  if ! mkdir -p "${APP_DATA_DIR}" "${APP_TMP_DIR}"; then
+    echo "ERROR: cannot create bootstrap directories." >&2
+    echo "Hint: override XDG_DATA_HOME to a writable path." >&2
+    exit 1
+  fi
+}
+
+cleanup_runfiles() {
+  local run_dir
+  run_dir="${APP_DATA_DIR}/pacscript"
+  [[ -d "${run_dir}" ]] || return 0
+
+  # Silent cleanup of leftover NVIDIA runfiles to avoid disk bloat.
+  find "${run_dir}" -maxdepth 1 -type f -name '*.run' -delete >/dev/null 2>&1 || true
+}
+
+acquire_lock() {
+  exec 9>"${APP_LOCK_FILE}"
+  if ! flock -n 9; then
+    echo "ERROR: another bootstrap process is running." >&2
+    exit 1
+  fi
+}
+
+print_paths() {
+  cat <<PATHS
+REPO_SLUG=${REPO_SLUG}
+RELEASE_API_URL=${RELEASE_API_URL}
+RELEASE_CHECKSUM_URL=${RELEASE_CHECKSUM_URL}
+APP_DATA_DIR=${APP_DATA_DIR}
+APP_TMP_DIR=${APP_TMP_DIR}
+PATHS
+}
+
+fetch_latest_metadata() {
+  curl -fsSL --connect-timeout 10 --max-time 30 "${RELEASE_API_URL}"
+}
+
+json_get_first() {
+  local key="$1"
+  jq -r "$key // empty" | head -n 1
+}
+
+read_expected_sha256() {
+  local checksum_file="$1"
+  local archive_name="$2"
+  awk -v a="${archive_name}" '$1 == a { print $2 }' "${checksum_file}" | head -n 1
+}
+
+log_update_event() {
+  local target_version="$1"
+  local status="$2"
+  local rollback="$3"
+  local note="${4:-}"
+  local ts
+  ts="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  printf '%s target=%s status=%s rollback=%s note=%s\n' \
+    "${ts}" "${target_version}" "${status}" "${rollback}" "${note}" >> "${APP_UPDATE_LOG_FILE}"
+}
+
+backup_current_install() {
+  rm -rf -- "${APP_BACKUP_DIR}"
+  mkdir -p "${APP_BACKUP_DIR}"
+
+  [[ -f "${APP_DATA_DIR}/${APP_VERSION_FILE##*/}" ]] && cp -a -- "${APP_DATA_DIR}/${APP_VERSION_FILE##*/}" "${APP_BACKUP_DIR}/"
+  [[ -f "${APP_DATA_DIR}/${APP_GUI_BIN}" ]] && cp -a -- "${APP_DATA_DIR}/${APP_GUI_BIN}" "${APP_BACKUP_DIR}/"
+  [[ -f "${APP_DATA_DIR}/${APP_CLI_BIN}" ]] && cp -a -- "${APP_DATA_DIR}/${APP_CLI_BIN}" "${APP_BACKUP_DIR}/"
+  [[ -f "${APP_DATA_DIR}/${APP_TUI_BIN}" ]] && cp -a -- "${APP_DATA_DIR}/${APP_TUI_BIN}" "${APP_BACKUP_DIR}/"
+  [[ -f "${APP_DATA_DIR}/${APP_BOOTSTRAP_BIN}" ]] && cp -a -- "${APP_DATA_DIR}/${APP_BOOTSTRAP_BIN}" "${APP_BACKUP_DIR}/"
+  [[ -d "${APP_DATA_DIR}/pacscript" ]] && cp -a -- "${APP_DATA_DIR}/pacscript" "${APP_BACKUP_DIR}/"
+}
+
+restore_backup() {
+  [[ -d "${APP_BACKUP_DIR}" ]] || return 0
+
+  rm -f -- \
+    "${APP_DATA_DIR}/${APP_GUI_BIN}" \
+    "${APP_DATA_DIR}/${APP_CLI_BIN}" \
+    "${APP_DATA_DIR}/${APP_TUI_BIN}" \
+    "${APP_DATA_DIR}/${APP_BOOTSTRAP_BIN}" \
+    "${APP_DATA_DIR}/${APP_VERSION_FILE##*/}"
+  rm -rf -- "${APP_DATA_DIR}/pacscript"
+  cp -a -- "${APP_BACKUP_DIR}/." "${APP_DATA_DIR}/"
+}
+
+update_latest_release() {
+  need_cmd curl
+  need_cmd jq
+  need_cmd tar
+  need_cmd sha256sum
+
+  local meta tag tar_url version archive_name tarball_tmp unpack_dir checksum_tmp expected_sha got_sha had_previous_install=0
+  meta="$(fetch_latest_metadata)"
+
+  tag="$(printf '%s' "${meta}" | json_get_first '.tag_name')"
+  tar_url="$(printf '%s' "${meta}" | jq -r '.assets[]?.browser_download_url // empty' | grep -E '/debian-nvidia-all-[^/]+\.tar\.gz$' | head -n 1 || true)"
+
+  if [[ -z "${tag}" || -z "${tar_url}" ]]; then
+    echo "ERROR: unable to resolve latest release tag or tar.gz asset from ${RELEASE_API_URL}" >&2
+    return 1
+  fi
+
+  version="${tag#v}"
+  archive_name="debian-nvidia-all-${version}.tar.gz"
+  if [[ -x "${APP_DATA_DIR}/${APP_GUI_BIN}" && -f "${APP_VERSION_FILE}" ]] && [[ "$(cat "${APP_VERSION_FILE}")" == "${version}" ]]; then
+    echo "Bootstrap: latest version already present (${version})."
+    log_update_event "${version}" "up-to-date" "no" "already-installed"
+    return 0
+  fi
+
+  tarball_tmp="${APP_TMP_DIR}/${archive_name}"
+  unpack_dir="${APP_TMP_DIR}/.${version}.tmp"
+  checksum_tmp="${APP_TMP_DIR}/release-sha256.txt"
+
+  rm -rf -- "${unpack_dir}"
+  mkdir -p "${unpack_dir}"
+
+  echo "Bootstrap: downloading ${tar_url}"
+  curl -fL --connect-timeout 10 --max-time 600 -o "${tarball_tmp}" "${tar_url}"
+
+  echo "Bootstrap: downloading checksum file"
+  curl -fL --connect-timeout 10 --max-time 30 -o "${checksum_tmp}" "${RELEASE_CHECKSUM_URL}"
+
+  expected_sha="$(read_expected_sha256 "${checksum_tmp}" "${archive_name}")"
+  if [[ -z "${expected_sha}" ]]; then
+    echo "ERROR: no checksum entry found for ${archive_name} in ${RELEASE_CHECKSUM_URL}" >&2
+    log_update_event "${version}" "failed" "no" "missing-checksum-entry"
+    rm -rf -- "${unpack_dir}"
+    return 1
+  fi
+
+  got_sha="$(sha256sum "${tarball_tmp}" | awk '{print $1}')"
+  if [[ "${got_sha}" != "${expected_sha}" ]]; then
+    echo "ERROR: checksum mismatch for ${archive_name}" >&2
+    echo "Expected: ${expected_sha}" >&2
+    echo "Got:      ${got_sha}" >&2
+    log_update_event "${version}" "failed" "no" "checksum-mismatch"
+    rm -rf -- "${unpack_dir}"
+    return 1
+  fi
+
+  if [[ -x "${APP_DATA_DIR}/${APP_GUI_BIN}" ]]; then
+    had_previous_install=1
+    backup_current_install
+  fi
+
+  echo "Bootstrap: extracting ${version}"
+  if ! tar -xzf "${tarball_tmp}" -C "${unpack_dir}"; then
+    if [[ "${had_previous_install}" -eq 1 ]]; then
+      echo "Bootstrap: extraction failed, restoring previous version..." >&2
+      restore_backup
+      log_update_event "${version}" "failed" "yes" "extract-failed-rollback"
+    else
+      log_update_event "${version}" "failed" "no" "extract-failed"
+    fi
+    rm -rf -- "${unpack_dir}"
+    return 1
+  fi
+
+  if [[ ! -f "${unpack_dir}/${APP_GUI_BIN}" || ! -f "${unpack_dir}/${APP_CLI_BIN}" || ! -f "${unpack_dir}/${APP_TUI_BIN}" ]]; then
+    echo "ERROR: extracted archive does not contain expected binaries/scripts." >&2
+    if [[ "${had_previous_install}" -eq 1 ]]; then
+      echo "Bootstrap: invalid archive content, restoring previous version..." >&2
+      restore_backup
+      log_update_event "${version}" "failed" "yes" "invalid-archive-rollback"
+    else
+      log_update_event "${version}" "failed" "no" "invalid-archive"
+    fi
+    rm -rf -- "${unpack_dir}"
+    return 1
+  fi
+
+  chmod +x "${unpack_dir}/${APP_GUI_BIN}" "${unpack_dir}/${APP_CLI_BIN}" "${unpack_dir}/${APP_TUI_BIN}"
+  if ! cp -a "${unpack_dir}/." "${APP_DATA_DIR}/"; then
+    if [[ "${had_previous_install}" -eq 1 ]]; then
+      echo "Bootstrap: install failed, restoring previous version..." >&2
+      restore_backup
+      log_update_event "${version}" "failed" "yes" "copy-failed-rollback"
+    else
+      log_update_event "${version}" "failed" "no" "copy-failed"
+    fi
+    rm -rf -- "${unpack_dir}"
+    return 1
+  fi
+  printf '%s' "${version}" > "${APP_VERSION_FILE}"
+  rm -rf -- "${unpack_dir}" "${APP_BACKUP_DIR}"
+
+  echo "Bootstrap: installed ${version}"
+  log_update_event "${version}" "success" "no" "installed"
+}
+
+check_updates() {
+  need_cmd curl
+  need_cmd jq
+
+  local meta tag latest_version current_version tar_url
+  meta="$(fetch_latest_metadata)"
+
+  tag="$(printf '%s' "${meta}" | json_get_first '.tag_name')"
+  tar_url="$(printf '%s' "${meta}" | jq -r '.assets[]?.browser_download_url // empty' | grep -E '/debian-nvidia-all-[^/]+\.tar\.gz$' | head -n 1 || true)"
+  if [[ -z "${tag}" || -z "${tar_url}" ]]; then
+    echo "ERROR: unable to resolve latest release metadata from ${RELEASE_API_URL}" >&2
+    return 2
+  fi
+
+  latest_version="${tag#v}"
+  current_version="none"
+  if [[ -f "${APP_VERSION_FILE}" ]]; then
+    current_version="$(cat "${APP_VERSION_FILE}")"
+  fi
+
+  printf 'CURRENT_VERSION=%s\n' "${current_version}"
+  printf 'LATEST_VERSION=%s\n' "${latest_version}"
+
+  if [[ "${current_version}" == "${latest_version}" ]]; then
+    echo "UPDATE_AVAILABLE=false"
+    return 0
+  fi
+
+  echo "UPDATE_AVAILABLE=true"
+  return 10
+}
+
+launch_current() {
+  local gui_path
+  gui_path="${APP_DATA_DIR}/${APP_GUI_BIN}"
+  if [[ ! -x "${gui_path}" ]]; then
+    echo "ERROR: no installed version found. Run without --no-update to bootstrap." >&2
+    exit 1
+  fi
+
+  exec "${gui_path}" "$@"
+}
+
+main() {
+  local update_enabled=true update_only=false check_only=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --help|-h)
+        usage
+        exit 0
+        ;;
+      --check-updates)
+        check_only=true
+        shift
+        ;;
+      --update-only)
+        update_only=true
+        shift
+        ;;
+      --no-update)
+        update_enabled=false
+        shift
+        ;;
+      --print-paths)
+        print_paths
+        exit 0
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  require_non_root
+  ensure_dirs
+  acquire_lock
+  cleanup_runfiles
+
+  if [[ "${check_only}" == "true" ]]; then
+    check_updates
+    exit $?
+  fi
+
+  if [[ "${update_enabled}" == "true" ]]; then
+    update_latest_release || {
+      echo "Bootstrap: update failed, trying current installed version..." >&2
+    }
+  fi
+
+  if [[ "${update_only}" == "true" ]]; then
+    exit 0
+  fi
+
+  launch_current "$@"
+}
+
+main "$@"
