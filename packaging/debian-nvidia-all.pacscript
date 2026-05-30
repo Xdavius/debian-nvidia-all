@@ -3,8 +3,9 @@ pkgver="1.0.0"
 pkgdesc="Bootstrap launcher for Debian NVIDIA All (self-updating app payload)"
 url="https://github.com/Xdavius/debian-nvidia-all"
 arch=("amd64")
-maintainer="Xdavius"
+maintainer="xdavius <xdavius@github.com>"
 license=("GPL-3.0")
+source=("https://github.com/Xdavius/debian-nvidia-all.git")
 
 depends=(
   "awk"
@@ -21,16 +22,8 @@ depends=(
   "xdg-utils"
 )
 
-prepare() {
-  cd "$srcdir"
-}
-
-build() {
-  cd "$srcdir"
-}
-
 package() {
-  cd "$srcdir"
+  cd "${pkgname}" || return 1
 
   install -d "$pkgdir/usr/bin"
   install -d "$pkgdir/usr/share/applications"

@@ -149,11 +149,12 @@ update_latest_release() {
   need_cmd tar
   need_cmd sha256sum
 
-  local meta tag tar_url version archive_name tarball_tmp unpack_dir checksum_tmp expected_sha got_sha had_previous_install=0
+  local meta tag tar_url checksum_asset_url version archive_name tarball_tmp unpack_dir checksum_tmp expected_sha got_sha had_previous_install=0
   meta="$(fetch_latest_metadata)"
 
   tag="$(printf '%s' "${meta}" | json_get_first '.tag_name')"
   tar_url="$(printf '%s' "${meta}" | jq -r '.assets[]?.browser_download_url // empty' | grep -E '/debian-nvidia-all-[^/]+\.tar\.gz$' | head -n 1 || true)"
+  checksum_asset_url="$(printf '%s' "${meta}" | jq -r '.assets[]?.browser_download_url // empty' | grep -E '/release-sha256\.txt$' | head -n 1 || true)"
 
   if [[ -z "${tag}" || -z "${tar_url}" ]]; then
     echo "ERROR: unable to resolve latest release tag or tar.gz asset from ${RELEASE_API_URL}" >&2
@@ -179,7 +180,21 @@ update_latest_release() {
   curl -fL --connect-timeout 10 --max-time 600 -o "${tarball_tmp}" "${tar_url}"
 
   echo "Bootstrap: downloading checksum file"
-  curl -fL --connect-timeout 10 --max-time 30 -o "${checksum_tmp}" "${RELEASE_CHECKSUM_URL}"
+  if [[ -n "${checksum_asset_url}" ]]; then
+    if ! curl -fL --connect-timeout 10 --max-time 30 -o "${checksum_tmp}" "${checksum_asset_url}"; then
+      echo "ERROR: unable to download checksum asset from release (${checksum_asset_url})" >&2
+      log_update_event "${version}" "failed" "no" "checksum-download-failed-release-asset"
+      rm -rf -- "${unpack_dir}"
+      return 1
+    fi
+  else
+    if ! curl -fL --connect-timeout 10 --max-time 30 -o "${checksum_tmp}" "${RELEASE_CHECKSUM_URL}"; then
+      echo "ERROR: unable to download checksum file from ${RELEASE_CHECKSUM_URL}" >&2
+      log_update_event "${version}" "failed" "no" "checksum-download-failed-fallback-url"
+      rm -rf -- "${unpack_dir}"
+      return 1
+    fi
+  fi
 
   expected_sha="$(read_expected_sha256 "${checksum_tmp}" "${archive_name}")"
   if [[ -z "${expected_sha}" ]]; then
@@ -285,7 +300,9 @@ launch_current() {
   local gui_path
   gui_path="${APP_DATA_DIR}/${APP_GUI_BIN}"
   if [[ ! -x "${gui_path}" ]]; then
-    echo "ERROR: no installed version found. Run without --no-update to bootstrap." >&2
+    echo "ERROR: no installed version found." >&2
+    echo "First bootstrap needs an accessible GitHub Release (latest) or explicit override URLs." >&2
+    echo "Hint: set NVIDIA_BOOTSTRAP_RELEASE_API_URL and NVIDIA_BOOTSTRAP_RELEASE_CHECKSUM_URL for local/dev tests." >&2
     exit 1
   fi
 
