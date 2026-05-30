@@ -285,7 +285,9 @@ launch_current() {
   local gui_path
   gui_path="${APP_DATA_DIR}/${APP_GUI_BIN}"
   if [[ ! -x "${gui_path}" ]]; then
-    echo "ERROR: no installed version found. Run without --no-update to bootstrap." >&2
+    echo "ERROR: no installed version found." >&2
+    echo "First bootstrap needs an accessible GitHub Release (latest) or explicit override URLs." >&2
+    echo "Hint: set NVIDIA_BOOTSTRAP_RELEASE_API_URL and NVIDIA_BOOTSTRAP_RELEASE_CHECKSUM_URL for local/dev tests." >&2
     exit 1
   fi
 
