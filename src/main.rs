@@ -208,6 +208,7 @@ fn build_install_cmdline(helper: &Path, pidx: usize, profile_text: &str) -> Stri
     let helper_path = helper.to_string_lossy().replace('\'', "'\\''");
 
     let mut ver_arg = "--branch recommended".to_string();
+    let mut module_arg = "";
     if pidx == 0 {
         ver_arg = "--branch recommended".to_string();
     } else if pidx == 1 {
@@ -218,10 +219,13 @@ fn build_install_cmdline(helper: &Path, pidx: usize, profile_text: &str) -> Stri
             ver_arg = format!("--version {}", ver);
         }
     }
+    if pidx == 2 {
+        module_arg = " --nvidia-open false";
+    }
 
     format!(
-        "bash '{}' --check-dependencies && bash '{}' --source online {} --action 1",
-        helper_path, helper_path, ver_arg
+        "bash '{}' --check-dependencies && bash '{}' --source online {}{} --action 1",
+        helper_path, helper_path, ver_arg, module_arg
     )
 }
 
