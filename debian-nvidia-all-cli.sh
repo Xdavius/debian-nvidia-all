@@ -60,6 +60,11 @@ run_as_root() {
     return $?
   fi
 
+  if [[ $gui_backend == true ]] && command_exists pkexec; then
+    pkexec "${cmd[@]}"
+    return $?
+  fi
+
   if command_exists sudo; then
     if [[ $gui_backend == true ]]; then
       if sudo -n true 2>/dev/null && sudo -n "${cmd[@]}"; then
@@ -72,7 +77,7 @@ run_as_root() {
     fi
   fi
 
-  if command_exists pkexec; then
+  if [[ $gui_backend != true ]] && command_exists pkexec; then
     if pkexec "${cmd[@]}"; then
       return 0
     fi
@@ -221,6 +226,59 @@ install_deb_file() {
   run_as_root apt install -y "$deb_path"
 }
 
+resolve_pacstall_deb_url() {
+  local releases_api='https://api.github.com/repos/pacstall/pacstall/releases/latest'
+  local latest_html='https://github.com/pacstall/pacstall/releases/latest'
+  local deb_url=''
+
+  if command_exists curl; then
+    deb_url=$(curl -fsSL "$releases_api" | sed -nE 's/.*"browser_download_url":[[:space:]]*"([^"]+\.deb)".*/\1/p' | head -n 1)
+  fi
+  if [[ -z $deb_url ]]; then
+    deb_url=$(download_file "$latest_html" - | sed -nE 's/.*href="([^"]+\.deb)".*/https:\/\/github.com\1/p' | head -n 1)
+  fi
+
+  [[ -n $deb_url ]] || return 1
+  printf '%s\n' "$deb_url"
+}
+
+install_dependency_bundle() {
+  local pacstall_deb=$1
+  shift
+  local -a apt_pkgs=("$@")
+  local script_tmp rc
+
+  if ! command_exists apt; then error "Ce script gere uniquement Debian/apt."; return 1; fi
+
+  script_tmp=$(mktemp "/tmp/debian-nvidia-all-deps.XXXXXX.sh")
+  chmod 700 "$script_tmp"
+  cat > "$script_tmp" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+pacstall_deb="${1:-}"
+shift || true
+
+if [[ -f /tmp/pacstall ]]; then
+  rm -f -- /tmp/pacstall
+fi
+mkdir -p /tmp/pacstall
+
+apt update
+if (($# > 0)); then
+  apt install -y "$@"
+fi
+if [[ -n "$pacstall_deb" ]]; then
+  apt install -y "$pacstall_deb"
+fi
+SCRIPT
+
+  run_as_root bash "$script_tmp" "$pacstall_deb" "${apt_pkgs[@]}"
+  rc=$?
+  rm -f "$script_tmp"
+  return $rc
+}
+
 # ensure_spdx_licenses : voir nom de la fonction pour le role.
 ensure_spdx_licenses() {
   local pkg='spdx-licenses'
@@ -236,8 +294,6 @@ ensure_spdx_licenses() {
 
 # ensure_pacstall_installed : voir nom de la fonction pour le role.
 ensure_pacstall_installed() {
-  local releases_api='https://api.github.com/repos/pacstall/pacstall/releases/latest'
-  local latest_html='https://github.com/pacstall/pacstall/releases/latest'
   local deb_url='' tmp_deb
   if [[ -f /tmp/pacstall ]]; then
     warn "/tmp/pacstall est un fichier, suppression pour restaurer le dossier attendu."
@@ -250,12 +306,7 @@ ensure_pacstall_installed() {
   fi
   if command_exists pacstall; then return 0; fi
   info "Installation de pacstall..."
-  if command_exists curl; then
-    deb_url=$(curl -fsSL "$releases_api" | sed -nE 's/.*"browser_download_url":[[:space:]]*"([^"]+\.deb)".*/\1/p' | head -n 1)
-  fi
-  if [[ -z $deb_url ]]; then
-    deb_url=$(download_file "$latest_html" - | sed -nE 's/.*href="([^"]+\.deb)".*/https:\/\/github.com\1/p' | head -n 1)
-  fi
+  deb_url=$(resolve_pacstall_deb_url || true)
   if [[ -z $deb_url ]]; then error "Impossible de trouver pacstall .deb"; return 1; fi
   info "Pacstall .deb: ${deb_url}"
   tmp_deb=$(mktemp "/tmp/pacstall.XXXXXX.deb")
@@ -272,7 +323,9 @@ check_dependencies() {
   local -a required=(awk curl df find grep sed sort tac lspci)
   local -a missing=()
   local -a missing_pkgs=()
+  local -a apt_pkgs=()
   info "Etape 1/3: verification des outils systeme..."
+  local dep need_spdx=false need_pacstall=false pacstall_deb_url='' pacstall_deb_tmp=''
   for dep in "${required[@]}"; do
     if ! command_exists "$dep"; then
       missing+=("$dep")
@@ -281,16 +334,55 @@ check_dependencies() {
   done
   if ((${#missing[@]} > 0)); then
     warn "Outils manquants: ${missing[*]}"
-    install_missing_dependencies "${missing_pkgs[@]}" || return 1
+    apt_pkgs+=("${missing_pkgs[@]}")
   else
     info "Outils systeme: OK"
   fi
+
   info "Etape 2/3: verification spdx-licenses..."
-  if ! ensure_spdx_licenses; then error "spdx-licenses requis"; return 1; fi
-  info "spdx-licenses: OK"
+  if ! dpkg-query -W -f='${Status}\n' "spdx-licenses" 2>/dev/null | grep -q "install ok installed"; then
+    need_spdx=true
+    apt_pkgs+=("spdx-licenses")
+    warn "Paquet manquant: spdx-licenses"
+  else
+    info "spdx-licenses: OK"
+  fi
+
   info "Etape 3/3: verification pacstall..."
-  if ! ensure_pacstall_installed; then error "pacstall requis"; return 1; fi
-  info "pacstall: OK"
+  if ! command_exists pacstall; then
+    need_pacstall=true
+    info "Resolution du paquet pacstall..."
+    pacstall_deb_url=$(resolve_pacstall_deb_url || true)
+    if [[ -z $pacstall_deb_url ]]; then error "Impossible de trouver pacstall .deb"; return 1; fi
+    info "Pacstall .deb: ${pacstall_deb_url}"
+    pacstall_deb_tmp=$(mktemp "/tmp/pacstall.XXXXXX.deb")
+    if ! download_file "$pacstall_deb_url" "$pacstall_deb_tmp"; then
+      rm -f "$pacstall_deb_tmp"
+      return 1
+    fi
+  else
+    info "pacstall: OK"
+  fi
+
+  if ((${#apt_pkgs[@]} > 0)) || [[ $need_pacstall == true ]]; then
+    info "Installation des dependances en une seule elevation pkexec..."
+    if ! install_dependency_bundle "$pacstall_deb_tmp" "${apt_pkgs[@]}"; then
+      [[ -n $pacstall_deb_tmp ]] && rm -f "$pacstall_deb_tmp"
+      return 1
+    fi
+    [[ -n $pacstall_deb_tmp ]] && rm -f "$pacstall_deb_tmp"
+  fi
+
+  if [[ $need_spdx == true ]] && ! dpkg-query -W -f='${Status}\n' "spdx-licenses" 2>/dev/null | grep -q "install ok installed"; then
+    error "spdx-licenses requis"
+    return 1
+  fi
+  if [[ $need_pacstall == true ]] && ! command_exists pacstall; then
+    error "pacstall requis"
+    return 1
+  fi
+
+  info "Dependances: OK"
   return 0
 }
 
@@ -411,6 +503,11 @@ runfile_is_valid() {
   sh "$file" --check >/dev/null 2>&1
 }
 
+remote_content_length() {
+  local url=$1
+  curl -fsIL "$url" 2>/dev/null | awk 'BEGIN{IGNORECASE=1} /^content-length:/ {gsub("\r","",$2); n=$2} END{if (n != "") print n}'
+}
+
 # collect_valid_runfiles : voir nom de la fonction pour le role.
 collect_valid_runfiles() {
   local file
@@ -448,7 +545,7 @@ get_locale_mirror_urls() {
 
 # pick_online_runfile_cli : voir nom de la fonction pour le role.
 pick_online_runfile_cli() {
-  local base_url versions selected_ver run_url run_name candidate local_versions
+  local base_url versions selected_ver run_url run_name candidate local_versions expected_size got_size
   local stable_major='' feature_major='' legacy_major=''
   local detected_gpu=''
   local latest_available recommended_available
@@ -555,6 +652,15 @@ pick_online_runfile_cli() {
   download_tmp_file="${pacscript_dir}/${run_name}.part"
   rm -f -- "$download_tmp_file"
   curl -fL --progress-bar -o "$download_tmp_file" "$run_url"
+  expected_size=$(remote_content_length "$run_url" || true)
+  if [[ -n ${expected_size:-} ]]; then
+    got_size=$(wc -c < "$download_tmp_file" | tr -d '[:space:]')
+    if [[ "$got_size" != "$expected_size" ]]; then
+      rm -f -- "$download_tmp_file"
+      error "Telechargement incomplet: ${got_size}/${expected_size} octets."
+      return 1
+    fi
+  fi
   if ! runfile_is_valid "$download_tmp_file"; then rm -f -- "$download_tmp_file"; error "Telechargement invalide."; return 1; fi
 
   mv -f -- "$download_tmp_file" "${pacscript_dir}/${run_name}"

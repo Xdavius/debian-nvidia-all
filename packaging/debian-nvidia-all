@@ -82,6 +82,10 @@ acquire_lock() {
   fi
 }
 
+release_lock() {
+  exec 9>&- || true
+}
+
 print_paths() {
   cat <<PATHS
 REPO_SLUG=${REPO_SLUG}
@@ -306,6 +310,7 @@ launch_current() {
     exit 1
   fi
 
+  release_lock
   exec "${gui_path}" "$@"
 }
 
