@@ -480,7 +480,7 @@ prepare() {
   local major
   major=$(_ver_major)
   echo "Mode patch: $([[ $patch_relaxed == "true" ]] && echo "relax" || echo "strict") (kernel courant: $(_kernel_triplet))"
-  local runfile
+  local runfile extract_rc
   runfile=$(find "${srcdir}" -maxdepth 1 -type f -name 'NVIDIA-Linux-*.run' | head -n1)
   [[ -n $runfile ]] || { echo "ERROR: no NVIDIA-Linux-*.run in ${srcdir}"; return 1; }
 
@@ -493,10 +493,20 @@ prepare() {
     return 1
   fi
   echo "Extraction du runfile NVIDIA (log: ${srcdir}/extract.log)..."
-  if ! sh "$runfile" --extract-only --target "${srcdir}/extracted-nvidia" > "${srcdir}/extract.log" 2>&1; then
-    echo "ERROR: NVIDIA runfile extraction failed (log: ${srcdir}/extract.log)"
-    tail -n 40 "${srcdir}/extract.log" || true
-    return 1
+  if sh "$runfile" --extract-only --target "${srcdir}/extracted-nvidia" > "${srcdir}/extract.log" 2>&1; then
+    extract_rc=0
+  else
+    extract_rc=$?
+  fi
+  if ((extract_rc != 0)); then
+    if [[ -r "${srcdir}/extracted-nvidia/.manifest" ]]; then
+      echo "WARNING: NVIDIA extractor returned ${extract_rc}, but extracted manifest is present; continuing."
+      tail -n 40 "${srcdir}/extract.log" || true
+    else
+      echo "ERROR: NVIDIA runfile extraction failed (log: ${srcdir}/extract.log)"
+      tail -n 40 "${srcdir}/extract.log" || true
+      return 1
+    fi
   fi
   [[ -r "${srcdir}/extracted-nvidia/.manifest" ]] || {
     echo "ERROR: manifest missing after extraction"; return 1; }
