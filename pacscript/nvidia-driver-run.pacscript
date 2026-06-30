@@ -419,9 +419,12 @@ _dest_dir() {
     NVCUVID_LIB|NVCUVID_LIB_SYMLINK|\
     ENCODEAPI_LIB|ENCODEAPI_LIB_SYMLINK|\
     VDPAU_LIB|VDPAU_SYMLINK|\
-    GBM_BACKEND_LIB_SYMLINK|\
     NVIFR_LIB|NVIFR_LIB_SYMLINK)
       echo "${lib}${sub:+/$sub}" ;;
+
+    # Backends GBM: Debian/libgbm cherche les backends dans le sous-dossier gbm/.
+    GBM_BACKEND_LIB_SYMLINK)
+      echo "${lib}/gbm" ;;
 
     # Modules pour le serveur graphique Xorg
     XMODULE_SHARED_LIB|GLX_MODULE_SHARED_LIB|GLX_MODULE_SYMLINK|XMODULE_SYMLINK|XMODULE_NEWSYM)
@@ -717,6 +720,7 @@ build() {
 
     # Ajout aux listes correspondantes
     if [[ $mode == 0000 ]]; then
+      [[ $cat == GBM_BACKEND_LIB_SYMLINK && $target != /* ]] && target="../${target}"
       symlinks_to_create+=("$target|${destdir}/${rel}")
       echo "SYMLINK: $path -> ${destdir}/${rel} (target: $target)" >> "${srcdir}/debug.txt"
     else

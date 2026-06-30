@@ -8,3 +8,4 @@ debian-nvidia-all-1.1.4.tar.gz 7f3b3e983b7c603378ec805bc2536c5c81f55da6fc70fa437
 debian-nvidia-all-1.1.5.tar.gz 3576591ab30de7ddda320a094073e6b07962beeae8c1eb7564a425ef08433b64
 debian-nvidia-all-1.2.0.tar.gz 59d5c9eb2bfa4dac1a95d762f34b147ce602cd19f71eea8ecb1cd93767f5cff6
 debian-nvidia-all-1.2.1.tar.gz 3d78f1d9841c8cb13fc8811fdd24425776144058b08c8502e0c7c4e13bd35478
+debian-nvidia-all-1.2.2.tar.gz 87058097780aa1f7e3beb51b97741ae07d43a206c9913d9f8ea1da0f1e22d59d
