@@ -224,7 +224,7 @@ fn build_install_cmdline(helper: &Path, pidx: usize, profile_text: &str) -> Stri
     }
 
     format!(
-        "bash '{}' --check-dependencies && bash '{}' --source online {}{} --action 1",
+        "NVIDIA_GUI_BACKEND=1 bash '{}' --check-dependencies && NVIDIA_GUI_BACKEND=1 bash '{}' --source online {}{} --action 1",
         helper_path, helper_path, ver_arg, module_arg
     )
 }

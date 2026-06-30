@@ -41,6 +41,7 @@ command_exists() { command -v "$1" >/dev/null 2>&1; }
 run_as_root() {
   local -a cmd=("$@")
   local cmd_str prompt_used=false pass=""
+  local gui_backend=false
 
   if ((${#cmd[@]} == 0)); then
     error "Commande privilegiee vide."
@@ -50,9 +51,24 @@ run_as_root() {
   cmd_str=$(printf '%q ' "${cmd[@]}")
   cmd_str=${cmd_str% }
 
+  if [[ ${NVIDIA_GUI_BACKEND:-} =~ ^(1|true|yes|on)$ ]]; then
+    gui_backend=true
+  fi
+
+  if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
+    "${cmd[@]}"
+    return $?
+  fi
+
   if command_exists sudo; then
-    if sudo "${cmd[@]}"; then
-      return 0
+    if [[ $gui_backend == true ]]; then
+      if sudo -n true 2>/dev/null && sudo -n "${cmd[@]}"; then
+        return 0
+      fi
+    else
+      if sudo "${cmd[@]}"; then
+        return 0
+      fi
     fi
   fi
 
@@ -76,10 +92,9 @@ run_as_root() {
   fi
 
   if [[ -n $pass ]]; then
-    if echo "$pass" | sudo -S -v >/dev/null 2>&1; then
+    if echo "$pass" | sudo -S "${cmd[@]}"; then
       pass=""
-      sudo "${cmd[@]}"
-      return $?
+      return 0
     fi
     pass=""
     error "Mot de passe incorrect."
@@ -242,9 +257,14 @@ ensure_pacstall_installed() {
     deb_url=$(download_file "$latest_html" - | sed -nE 's/.*href="([^"]+\.deb)".*/https:\/\/github.com\1/p' | head -n 1)
   fi
   if [[ -z $deb_url ]]; then error "Impossible de trouver pacstall .deb"; return 1; fi
+  info "Pacstall .deb: ${deb_url}"
   tmp_deb=$(mktemp "/tmp/pacstall.XXXXXX.deb")
   if download_file "$deb_url" "$tmp_deb"; then install_deb_file "$tmp_deb"; else rm -f "$tmp_deb"; return 1; fi
   rm -f "$tmp_deb"
+  if ! command_exists pacstall; then
+    error "pacstall reste introuvable apres installation du paquet."
+    return 1
+  fi
 }
 
 # check_dependencies : voir nom de la fonction pour le role.
