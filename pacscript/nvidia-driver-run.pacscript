@@ -450,6 +450,7 @@ _dest_dir() {
     # Profils et données générales pour les applications NVIDIA
     APPLICATION_PROFILE|SANDBOXUTILS_FILELIST_JSON|OPENGL_DATA)
                                        echo /usr/share/nvidia ;;
+    EXPLICIT_PATH)                     echo "$sub" ;;
     
     # Raccourci bureau (fichier .desktop) et icônes
     DOT_DESKTOP)                       echo /usr/share/applications ;;
@@ -814,6 +815,7 @@ build() {
   else
     cp -r "${ext}/kernel"/* "$ksrc/"
   fi
+  chmod 0755 "$ksrc"/conftest.sh "$ksrc"/pahole.sh 2>/dev/null || true
 
   # Le fichier dkms.conf fourni est un modèle, généralement rempli par nvidia-installer.
   # La liste des modules se trouve à la ligne 4 du manifest, séparée par des espaces.
