@@ -2,7 +2,7 @@
 
 Ce document sert de mémoire de projet pour éviter les régressions lors des évolutions GUI, TUI et CLI.
 Il est volontairement détaillé.
-Dernière mise à jour: 2026-05-30 (point d'étape bootstrap 1.0.0 + validation isolée).
+Dernière mise à jour: 2026-06-30 (driver latest 610, GBM Debian, suspend/resume, version 1.2.2).
 
 ## 1) Architecture actuelle (source de vérité)
 - Backend métier unique: `debian-nvidia-all-cli.sh`
@@ -348,6 +348,80 @@ Règle:
 - Points ouverts:
   - confirmer le test `/usr/bin` sur installation paquet réelle (pas seulement simulation)
   - si besoin futur: ajouter alias explicite `--apply-updates` pour ergonomie CLI (non bloquant)
+
+### 2026-06-30 (drivers latest, packaging NVIDIA, KDE/Wayland)
+- Objectif:
+  - Stabiliser la chaîne GUI/CLI/Pacstall pour les drivers NVIDIA récents, en particulier `latest` (`610.43.02`) sur Debian/KDE/Wayland.
+  - Corriger les régressions rapportées par tests VM et machine réelle.
+- Changements faits:
+  - Versioning:
+    - bumps successifs jusqu'à `1.2.2` dans `Cargo.toml`, `Cargo.lock` et `packaging/debian-nvidia-all.pacscript`.
+  - `build-release.sh`:
+    - ajout de la régénération du `.deb` via `pacstall -IB debian-nvidia-all.pacscript` depuis `packaging/`.
+  - Pacscript principal `pacscript/nvidia-driver-run.pacscript`:
+    - ajout de la catégorie manifest `EXPLICIT_PATH` pour les entrées NVIDIA récentes.
+    - correction de l'arbre DKMS: `conftest.sh` et `pahole.sh` sont remis en `0755` après copie vers `/usr/src/...`.
+    - correction GBM alignée Debian:
+      - avant: `nvidia-drm_gbm.so` était généré à la racine de `/usr/lib/<multiarch>/`.
+      - maintenant: `nvidia-drm_gbm.so` est généré dans `/usr/lib/<multiarch>/gbm/`.
+      - cible relative: `../libnvidia-allocator.so.1`.
+      - chemins validés:
+        - `/usr/lib/x86_64-linux-gnu/gbm/nvidia-drm_gbm.so`
+        - `/usr/lib/i386-linux-gnu/gbm/nvidia-drm_gbm.so`
+    - correction sortie de veille:
+      - pour open `>=595`: `NVreg_UseKernelSuspendNotifiers=1 NVreg_TemporaryFilePath=/var/tmp`.
+      - pour closed/anciens drivers: `NVreg_PreserveVideoMemoryAllocations=1` + `NVreg_TemporaryFilePath=/var/tmp`.
+      - `/tmp` n'est plus utilisé pour la sauvegarde VRAM.
+    - activation explicite post-install des unités NVIDIA oneshot:
+      - `nvidia-suspend.service`
+      - `nvidia-resume.service`
+      - `nvidia-hibernate.service`
+      - `nvidia-suspend-then-hibernate.service`
+      - via `systemctl daemon-reload` puis `systemctl enable ...`.
+  - GUI/CLI dépendances:
+    - investigation du bootstrap Pacstall/SPDX.
+    - attention particulière à `pkexec`: conserver `pkexec`, éviter de multiplier les prompts.
+- Vérifications exécutées:
+  - `cargo check`
+  - `bash -n pacscript/nvidia-driver-run.pacscript`
+  - `bash -n packaging/debian-nvidia-all.pacscript`
+  - tests de packaging temporaires dans `/tmp` avec `NVIDIA-Linux-x86_64-610.43.02.run`.
+  - test latest `610.43.02` avec kernel simulé `6.12.90+deb13.1-amd64`:
+    - `prepare`
+    - `build`
+    - `package`
+    - compilation directe `make ... KERNEL_UNAME=6.12.90+deb13.1-amd64 modules`
+  - validation DKMS:
+    - les modules `nvidia`, `nvidia-uvm`, `nvidia-modeset`, `nvidia-drm`, `nvidia-peermem` compilent sur 6.12.
+  - validation GBM:
+    - paquet temporaire latest génère les symlinks GBM dans `gbm/`.
+    - l'ancien emplacement racine n'est plus généré.
+  - validation suspend:
+    - paquet temporaire latest/open génère `NVreg_UseKernelSuspendNotifiers=1` avec `/var/tmp`.
+    - fallback closed génère `NVreg_PreserveVideoMemoryAllocations=1` avec `/var/tmp`.
+    - services `nvidia-suspend/resume/hibernate` présents dans le paquet.
+- Investigations importantes:
+  - Comparaison Debian officielle via Salsa:
+    - Debian place `nvidia-drm_gbm.so` via alternatives vers `/usr/lib/<multiarch>/gbm/nvidia-drm_gbm.so`.
+    - Debian garde les libs NVIDIA dans un répertoire privé `nvidia/current`, mais le projet choisit une correction plus simple sans reproduire toute la mécanique alternatives.
+  - Logs KDE/Wayland observés:
+    - erreurs EGL/GBM plausibles (`Could not create EGL surface`, `eglSwapBuffers failed`, compositor Wayland mort).
+    - la correction GBM est la piste principale pour le KDE cassé au reboot.
+  - Sortie de veille:
+    - la doc NVIDIA indique que `/tmp` est souvent `tmpfs` et potentiellement trop petit pour préserver la VRAM.
+    - `/var/tmp` est retenu comme cible plus sûre.
+- Points ouverts:
+  - Tester en conditions réelles après installation `1.2.2`:
+    - reboot KDE/Wayland.
+    - suspend/resume.
+    - machine avec GPU open-compatible.
+    - machine avec GPU nécessitant `nvidia_open=false`.
+  - Revoir plus tard la sélection automatique `nvidia_open`:
+    - actuellement `>=515` tend vers open par défaut.
+    - risque si GPU supporté par le driver récent mais pas par les modules open.
+  - Vérifier que `systemctl enable` depuis hook Pacstall se comporte bien dans toutes les cibles Debian/distrobox.
+  - Ne pas réintroduire les changements `TMPDIR`/`PACSTALL_TMPDIR`/`bwrap` qui avaient provoqué `Permission denied` et casse du build.
+  - Sur gros GPU, confirmer que `/var/tmp` a assez d'espace pour la VRAM + marge recommandée.
 
 ## 11) Mémo debug (variables d'env)
 

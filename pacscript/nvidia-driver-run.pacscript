@@ -853,11 +853,15 @@ blacklist nouveau
 options nouveau modeset=0
 EOF
 
-  cat > "${pkgdir}/etc/modprobe.d/nvidia.conf" <<'EOF'
-options nvidia NVreg_PreserveVideoMemoryAllocations=1
-options nvidia NVreg_TemporaryFilePath=/tmp
-options nvidia-drm modeset=1 fbdev=1
-EOF
+  {
+    if [[ $nvidia_open == "true" && $(_ver_major) -ge 595 ]]; then
+      echo "options nvidia NVreg_UseKernelSuspendNotifiers=1 NVreg_TemporaryFilePath=/var/tmp"
+    else
+      echo "options nvidia NVreg_PreserveVideoMemoryAllocations=1"
+      echo "options nvidia NVreg_TemporaryFilePath=/var/tmp"
+    fi
+    echo "options nvidia-drm modeset=1 fbdev=1"
+  } > "${pkgdir}/etc/modprobe.d/nvidia.conf"
 
   cat > "${pkgdir}/etc/modules-load.d/nvidia.conf" <<'EOF'
 nvidia
@@ -896,6 +900,12 @@ post_install() {
   # Installation des modules du noyau avec DKMS (gère automatiquement add et build)
   if command -v dkms >/dev/null; then
     dkms install "${_dkmsname}/${pkgver}" || echo "AVERTISSEMENT: L'installation DKMS a échoué (en-têtes du noyau manquants ?)"
+  fi
+  # Les services NVIDIA sont des oneshot déclenchés par systemd pendant les cycles
+  # suspend/hibernate/resume; on les active, mais on ne les démarre pas ici.
+  if command -v systemctl >/dev/null; then
+    systemctl daemon-reload || true
+    systemctl enable nvidia-suspend.service nvidia-resume.service nvidia-hibernate.service nvidia-suspend-then-hibernate.service >/dev/null 2>&1 || true
   fi
   # Mise à jour du cache des bibliothèques partagées et de l'initramfs
   if command -v ldconfig >/dev/null; then ldconfig || true; fi
