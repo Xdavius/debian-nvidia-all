@@ -788,10 +788,18 @@ print_local_runfiles_cli() {
 run_pacstall_gui() {
   local pacstall_tmp="${pacscript_dir}/.tmp"
   local pacstall_wrapper="${pacstall_tmp}/run-pacstall.sh"
+  local available_kib available_gib
   mkdir -p "$pacstall_tmp"
 
   info "Contexte disque avant Pacstall:"
   df -h "$pacscript_dir" "$pacstall_tmp" /tmp 2>/dev/null || true
+  info "PACSTALL_TMPDIR=${pacstall_tmp}"
+  available_kib=$(df -Pk "$pacstall_tmp" | awk 'NR==2 {print $4}')
+  available_gib=$((available_kib / 1024 / 1024))
+  if ((available_gib < 6)); then
+    warn "Espace libre faible pour Pacstall dans ${pacstall_tmp}: environ ${available_gib} Gio."
+    warn "Les drivers NVIDIA recents peuvent necessiter plus de 6 Gio pendant la construction."
+  fi
 
   cat > "$pacstall_wrapper" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -804,6 +812,7 @@ shift 3
 
 cd "$pacscript_dir"
 export TMPDIR="$pacstall_tmp"
+export PACSTALL_TMPDIR="$pacstall_tmp"
 exec pacstall "$@" "$generated_pacscript"
 SCRIPT
   chmod 700 "$pacstall_wrapper"
