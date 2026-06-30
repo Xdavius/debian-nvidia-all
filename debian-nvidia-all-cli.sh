@@ -242,9 +242,14 @@ resolve_pacstall_deb_url() {
   printf '%s\n' "$deb_url"
 }
 
+resolve_spdx_deb_url() {
+  local pkg='spdx-licenses'
+  printf '%s\n' "${NVIDIA_SPDX_DEB_URL:-https://ftp.debian.org/debian/pool/main/s/${pkg}/${pkg}_3.27.0+ds-1_all.deb}"
+}
+
 install_dependency_bundle() {
-  local pacstall_deb=$1
-  shift
+  local spdx_deb=$1 pacstall_deb=$2
+  shift 2
   local -a apt_pkgs=("$@")
   local script_tmp rc
 
@@ -256,8 +261,9 @@ install_dependency_bundle() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-pacstall_deb="${1:-}"
-shift || true
+spdx_deb="${1:-}"
+pacstall_deb="${2:-}"
+shift 2 || true
 
 if [[ -f /tmp/pacstall ]]; then
   rm -f -- /tmp/pacstall
@@ -266,14 +272,30 @@ mkdir -p /tmp/pacstall
 
 apt update
 if (($# > 0)); then
-  apt install -y "$@"
+  apt install -y "$@" || {
+    if [[ -n "$spdx_deb" ]]; then
+      filtered=()
+      for pkg in "$@"; do
+        [[ "$pkg" == "spdx-licenses" ]] && continue
+        filtered+=("$pkg")
+      done
+      if ((${#filtered[@]} > 0)); then
+        apt install -y "${filtered[@]}"
+      fi
+    else
+      exit 1
+    fi
+  }
+fi
+if [[ -n "$spdx_deb" ]]; then
+  apt install -y "$spdx_deb"
 fi
 if [[ -n "$pacstall_deb" ]]; then
   apt install -y "$pacstall_deb"
 fi
 SCRIPT
 
-  run_as_root bash "$script_tmp" "$pacstall_deb" "${apt_pkgs[@]}"
+  run_as_root bash "$script_tmp" "$spdx_deb" "$pacstall_deb" "${apt_pkgs[@]}"
   rc=$?
   rm -f "$script_tmp"
   return $rc
@@ -282,10 +304,11 @@ SCRIPT
 # ensure_spdx_licenses : voir nom de la fonction pour le role.
 ensure_spdx_licenses() {
   local pkg='spdx-licenses'
-  local deb_url="https://ftp.debian.org/debian/pool/main/s/${pkg}/${pkg}_3.27.0+ds-1_all.deb"
+  local deb_url
   if dpkg-query -W -f='${Status}\n' "$pkg" 2>/dev/null | grep -q "install ok installed"; then return 0; fi
   info "Installation de ${pkg}..."
   if run_as_root apt update && run_as_root apt install -y "$pkg"; then return 0; fi
+  deb_url=$(resolve_spdx_deb_url)
   local tmp_deb
   tmp_deb=$(mktemp "/tmp/${pkg}.XXXXXX.deb")
   if download_file "$deb_url" "$tmp_deb"; then install_deb_file "$tmp_deb"; else rm -f "$tmp_deb"; return 1; fi
@@ -325,7 +348,7 @@ check_dependencies() {
   local -a missing_pkgs=()
   local -a apt_pkgs=()
   info "Etape 1/3: verification des outils systeme..."
-  local dep need_spdx=false need_pacstall=false pacstall_deb_url='' pacstall_deb_tmp=''
+  local dep need_spdx=false need_pacstall=false spdx_deb_url='' spdx_deb_tmp='' pacstall_deb_url='' pacstall_deb_tmp=''
   for dep in "${required[@]}"; do
     if ! command_exists "$dep"; then
       missing+=("$dep")
@@ -344,6 +367,13 @@ check_dependencies() {
     need_spdx=true
     apt_pkgs+=("spdx-licenses")
     warn "Paquet manquant: spdx-licenses"
+    spdx_deb_url=$(resolve_spdx_deb_url)
+    info "Fallback spdx-licenses .deb: ${spdx_deb_url}"
+    spdx_deb_tmp=$(mktemp "/tmp/spdx-licenses.XXXXXX.deb")
+    if ! download_file "$spdx_deb_url" "$spdx_deb_tmp"; then
+      rm -f "$spdx_deb_tmp"
+      return 1
+    fi
   else
     info "spdx-licenses: OK"
   fi
@@ -353,10 +383,15 @@ check_dependencies() {
     need_pacstall=true
     info "Resolution du paquet pacstall..."
     pacstall_deb_url=$(resolve_pacstall_deb_url || true)
-    if [[ -z $pacstall_deb_url ]]; then error "Impossible de trouver pacstall .deb"; return 1; fi
+    if [[ -z $pacstall_deb_url ]]; then
+      [[ -n $spdx_deb_tmp ]] && rm -f "$spdx_deb_tmp"
+      error "Impossible de trouver pacstall .deb"
+      return 1
+    fi
     info "Pacstall .deb: ${pacstall_deb_url}"
     pacstall_deb_tmp=$(mktemp "/tmp/pacstall.XXXXXX.deb")
     if ! download_file "$pacstall_deb_url" "$pacstall_deb_tmp"; then
+      [[ -n $spdx_deb_tmp ]] && rm -f "$spdx_deb_tmp"
       rm -f "$pacstall_deb_tmp"
       return 1
     fi
@@ -366,10 +401,12 @@ check_dependencies() {
 
   if ((${#apt_pkgs[@]} > 0)) || [[ $need_pacstall == true ]]; then
     info "Installation des dependances en une seule elevation pkexec..."
-    if ! install_dependency_bundle "$pacstall_deb_tmp" "${apt_pkgs[@]}"; then
+    if ! install_dependency_bundle "$spdx_deb_tmp" "$pacstall_deb_tmp" "${apt_pkgs[@]}"; then
+      [[ -n $spdx_deb_tmp ]] && rm -f "$spdx_deb_tmp"
       [[ -n $pacstall_deb_tmp ]] && rm -f "$pacstall_deb_tmp"
       return 1
     fi
+    [[ -n $spdx_deb_tmp ]] && rm -f "$spdx_deb_tmp"
     [[ -n $pacstall_deb_tmp ]] && rm -f "$pacstall_deb_tmp"
   fi
 
@@ -749,7 +786,29 @@ print_local_runfiles_cli() {
 
 # Lance pacstall avec élévation de privilèges unifiée.
 run_pacstall_gui() {
-  run_as_root pacstall "${PACSTALL_ARGS[@]}" "$generated_pacscript"
+  local pacstall_tmp="${pacscript_dir}/.tmp"
+  local pacstall_wrapper="${pacstall_tmp}/run-pacstall.sh"
+  mkdir -p "$pacstall_tmp"
+
+  info "Contexte disque avant Pacstall:"
+  df -h "$pacscript_dir" "$pacstall_tmp" /tmp 2>/dev/null || true
+
+  cat > "$pacstall_wrapper" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+pacscript_dir=$1
+pacstall_tmp=$2
+generated_pacscript=$3
+shift 3
+
+cd "$pacscript_dir"
+export TMPDIR="$pacstall_tmp"
+exec pacstall "$@" "$generated_pacscript"
+SCRIPT
+  chmod 700 "$pacstall_wrapper"
+
+  run_as_root bash "$pacstall_wrapper" "$pacscript_dir" "$pacstall_tmp" "$generated_pacscript" "${PACSTALL_ARGS[@]}"
 }
 
 # Initialise toutes les options CLI avec leurs valeurs par défaut.

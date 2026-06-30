@@ -232,11 +232,16 @@ fn build_install_cmdline(helper: &Path, pidx: usize, profile_text: &str) -> Stri
 fn spawn_install_run(weak: slint::Weak<AppWindow>, helper: PathBuf, pidx: usize, profile_text: String) {
     thread::spawn(move || {
         let cmdline = build_install_cmdline(&helper, pidx, &profile_text);
+        let helper_dir = helper
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
 
         let mut child = match Command::new("script")
             .arg("-qefc")
             .arg(cmdline)
             .arg("/dev/null")
+            .current_dir(helper_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
