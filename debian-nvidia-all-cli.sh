@@ -786,7 +786,7 @@ print_local_runfiles_cli() {
 
 # Lance pacstall avec élévation de privilèges unifiée.
 run_pacstall_gui() {
-  local pacstall_tmp="${pacscript_dir}/.tmp"
+  local pacstall_tmp="${script_dir}/.pacstall-tmp"
   local pacstall_wrapper="${pacstall_tmp}/run-pacstall.sh"
   local available_kib available_gib
   mkdir -p "$pacstall_tmp"
