@@ -301,6 +301,29 @@ SCRIPT
   return $rc
 }
 
+kernel_headers_present() {
+  local kernel_release=${1:-$(uname -r)}
+  [[ -e "/lib/modules/${kernel_release}/build" ]]
+}
+
+resolve_kernel_header_packages() {
+  local kernel_release=${1:-$(uname -r)}
+  local header_meta=''
+
+  case "$kernel_release" in
+    *-cloud-amd64) header_meta='linux-headers-cloud-amd64' ;;
+    *-rt-amd64) header_meta='linux-headers-rt-amd64' ;;
+    *-amd64) header_meta='linux-headers-amd64' ;;
+    *-686-pae) header_meta='linux-headers-686-pae' ;;
+  esac
+
+  printf 'linux-headers-%s' "$kernel_release"
+  if [[ -n $header_meta ]]; then
+    printf ' %s' "$header_meta"
+  fi
+  printf '\n'
+}
+
 # ensure_spdx_licenses : voir nom de la fonction pour le role.
 ensure_spdx_licenses() {
   local pkg='spdx-licenses'
@@ -347,8 +370,9 @@ check_dependencies() {
   local -a missing=()
   local -a missing_pkgs=()
   local -a apt_pkgs=()
-  info "Etape 1/3: verification des outils systeme..."
-  local dep need_spdx=false need_pacstall=false spdx_deb_url='' spdx_deb_tmp='' pacstall_deb_url='' pacstall_deb_tmp=''
+  local kernel_release header_pkgs header_pkg
+  info "Etape 1/4: verification des outils systeme..."
+  local dep need_spdx=false need_pacstall=false need_kernel_headers=false spdx_deb_url='' spdx_deb_tmp='' pacstall_deb_url='' pacstall_deb_tmp=''
   for dep in "${required[@]}"; do
     if ! command_exists "$dep"; then
       missing+=("$dep")
@@ -362,7 +386,21 @@ check_dependencies() {
     info "Outils systeme: OK"
   fi
 
-  info "Etape 2/3: verification spdx-licenses..."
+  info "Etape 2/4: verification des headers du noyau actif..."
+  kernel_release=$(uname -r)
+  if ! kernel_headers_present "$kernel_release"; then
+    need_kernel_headers=true
+    header_pkgs=$(resolve_kernel_header_packages "$kernel_release")
+    warn "Headers manquants pour le noyau actif: ${kernel_release}"
+    warn "Paquets headers a installer: ${header_pkgs}"
+    for header_pkg in $header_pkgs; do
+      apt_pkgs+=("$header_pkg")
+    done
+  else
+    info "Headers noyau actif (${kernel_release}): OK"
+  fi
+
+  info "Etape 3/4: verification spdx-licenses..."
   if ! dpkg-query -W -f='${Status}\n' "spdx-licenses" 2>/dev/null | grep -q "install ok installed"; then
     need_spdx=true
     apt_pkgs+=("spdx-licenses")
@@ -378,7 +416,7 @@ check_dependencies() {
     info "spdx-licenses: OK"
   fi
 
-  info "Etape 3/3: verification pacstall..."
+  info "Etape 4/4: verification pacstall..."
   if ! command_exists pacstall; then
     need_pacstall=true
     info "Resolution du paquet pacstall..."
@@ -418,6 +456,10 @@ check_dependencies() {
     error "pacstall requis"
     return 1
   fi
+  if [[ $need_kernel_headers == true ]] && ! kernel_headers_present "$kernel_release"; then
+    error "Headers du noyau actif toujours manquants pour ${kernel_release}"
+    return 1
+  fi
 
   info "Dependances: OK"
   return 0
@@ -428,9 +470,10 @@ inspect_dependencies_cli() {
   local -a required=(awk curl df find grep sed sort tac lspci)
   local -a missing_tools=()
   local -a missing_pkgs=()
-  local dep
+  local dep kernel_release header_pkgs header_pkg
   local missing_spdx=false
   local missing_pacstall=false
+  local missing_kernel_headers=false
 
   for dep in "${required[@]}"; do
     if ! command_exists "$dep"; then
@@ -445,13 +488,25 @@ inspect_dependencies_cli() {
   if ! command_exists pacstall; then
     missing_pacstall=true
   fi
+  kernel_release=$(uname -r)
+  header_pkgs=''
+  if ! kernel_headers_present "$kernel_release"; then
+    missing_kernel_headers=true
+    header_pkgs=$(resolve_kernel_header_packages "$kernel_release")
+    for header_pkg in $header_pkgs; do
+      missing_pkgs+=("$header_pkg")
+    done
+  fi
 
   printf 'MISSING_TOOLS=%s\n' "${missing_tools[*]}"
   printf 'MISSING_PACKAGES=%s\n' "${missing_pkgs[*]}"
   printf 'MISSING_SPDX=%s\n' "$missing_spdx"
   printf 'MISSING_PACSTALL=%s\n' "$missing_pacstall"
+  printf 'MISSING_KERNEL_HEADERS=%s\n' "$missing_kernel_headers"
+  printf 'KERNEL_RELEASE=%s\n' "$kernel_release"
+  printf 'KERNEL_HEADER_PACKAGES=%s\n' "$header_pkgs"
 
-  if ((${#missing_tools[@]} > 0)) || [[ $missing_spdx == true || $missing_pacstall == true ]]; then
+  if ((${#missing_tools[@]} > 0)) || [[ $missing_spdx == true || $missing_pacstall == true || $missing_kernel_headers == true ]]; then
     printf 'HAS_MISSING=true\n'
   else
     printf 'HAS_MISSING=false\n'

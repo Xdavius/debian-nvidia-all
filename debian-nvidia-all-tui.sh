@@ -105,7 +105,7 @@ ui_menu() {
 
 ## Verifie la presence du backend CLI et lance son check dependances.
 check_backend_ready() {
-  local inspect_out missing_tools missing_pkgs missing_spdx missing_pacstall has_missing
+  local inspect_out missing_tools missing_pkgs missing_spdx missing_pacstall missing_kernel_headers kernel_release kernel_header_pkgs has_missing
   [[ -f $cli_script ]] || { error "CLI introuvable: ${cli_script}"; return 1; }
   ui_header
   title "Verification initiale"
@@ -116,6 +116,9 @@ check_backend_ready() {
   missing_pkgs=$(printf '%s\n' "$inspect_out" | sed -n 's/^MISSING_PACKAGES=//p')
   missing_spdx=$(printf '%s\n' "$inspect_out" | sed -n 's/^MISSING_SPDX=//p')
   missing_pacstall=$(printf '%s\n' "$inspect_out" | sed -n 's/^MISSING_PACSTALL=//p')
+  missing_kernel_headers=$(printf '%s\n' "$inspect_out" | sed -n 's/^MISSING_KERNEL_HEADERS=//p')
+  kernel_release=$(printf '%s\n' "$inspect_out" | sed -n 's/^KERNEL_RELEASE=//p')
+  kernel_header_pkgs=$(printf '%s\n' "$inspect_out" | sed -n 's/^KERNEL_HEADER_PACKAGES=//p')
   has_missing=$(printf '%s\n' "$inspect_out" | sed -n 's/^HAS_MISSING=//p')
 
   if [[ $has_missing == "true" ]]; then
@@ -123,6 +126,7 @@ check_backend_ready() {
     title "Dependances requises"
     [[ -n $missing_tools ]] && warn "Outils manquants: $missing_tools"
     [[ -n $missing_pkgs ]] && warn "Paquets a installer: $missing_pkgs"
+    [[ $missing_kernel_headers == "true" ]] && warn "Headers noyau manquants (${kernel_release}): ${kernel_header_pkgs}"
     [[ $missing_spdx == "true" ]] && warn "Paquet requis manquant: spdx-licenses"
     [[ $missing_pacstall == "true" ]] && warn "Outil requis manquant: pacstall"
     if ! yes_no "Continuer et installer automatiquement ces dependances ?" yes; then

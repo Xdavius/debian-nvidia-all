@@ -24,6 +24,9 @@ struct DepInspection {
     missing_packages: String,
     missing_spdx: bool,
     missing_pacstall: bool,
+    missing_kernel_headers: bool,
+    kernel_release: String,
+    kernel_header_packages: String,
 }
 
 fn append_and_refresh(weak: &slint::Weak<AppWindow>, logs: &Arc<Mutex<String>>, line: &str) {
@@ -179,6 +182,9 @@ fn inspect_dependencies(helper: &Path) -> Result<DepInspection, String> {
     let mut missing_packages = String::new();
     let mut missing_spdx = false;
     let mut missing_pacstall = false;
+    let mut missing_kernel_headers = false;
+    let mut kernel_release = String::new();
+    let mut kernel_header_packages = String::new();
 
     let text = String::from_utf8_lossy(&output.stdout);
     for line in text.lines() {
@@ -190,6 +196,9 @@ fn inspect_dependencies(helper: &Path) -> Result<DepInspection, String> {
                 "MISSING_PACKAGES" => missing_packages = v.trim().to_string(),
                 "MISSING_SPDX" => missing_spdx = v.trim() == "true",
                 "MISSING_PACSTALL" => missing_pacstall = v.trim() == "true",
+                "MISSING_KERNEL_HEADERS" => missing_kernel_headers = v.trim() == "true",
+                "KERNEL_RELEASE" => kernel_release = v.trim().to_string(),
+                "KERNEL_HEADER_PACKAGES" => kernel_header_packages = v.trim().to_string(),
                 _ => {}
             }
         }
@@ -201,6 +210,9 @@ fn inspect_dependencies(helper: &Path) -> Result<DepInspection, String> {
         missing_packages,
         missing_spdx,
         missing_pacstall,
+        missing_kernel_headers,
+        kernel_release,
+        kernel_header_packages,
     })
 }
 
@@ -626,6 +638,14 @@ fn main() {
             }
             dep_report.missing_spdx = true;
             dep_report.missing_pacstall = true;
+            dep_report.missing_kernel_headers = true;
+            if dep_report.kernel_release.is_empty() {
+                dep_report.kernel_release = "6.12.0-amd64".to_string();
+            }
+            if dep_report.kernel_header_packages.is_empty() {
+                dep_report.kernel_header_packages =
+                    "linux-headers-6.12.0-amd64 linux-headers-amd64".to_string();
+            }
         }
 
         if dep_report.has_missing {
@@ -635,6 +655,12 @@ fn main() {
             }
             if !dep_report.missing_packages.is_empty() {
                 details.push(format!("Paquets a installer: {}", dep_report.missing_packages));
+            }
+            if dep_report.missing_kernel_headers {
+                details.push(format!(
+                    "Headers noyau manquants ({}): {}",
+                    dep_report.kernel_release, dep_report.kernel_header_packages
+                ));
             }
             if dep_report.missing_spdx {
                 details.push("Paquet requis manquant: spdx-licenses".to_string());
